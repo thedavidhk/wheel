@@ -10,7 +10,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
-#include "handmade.h"
+#include "handmade_public.h"
 
 
 double timeDiff(timespec start, timespec end)
