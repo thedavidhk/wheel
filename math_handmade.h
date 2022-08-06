@@ -52,11 +52,17 @@ struct Intersection {
     v2 coordinates;
 };
 
-union v3 {
-    struct {
-        float x, y, z;
-    };
-    float elements[3];
+struct M2 {
+    float m11, m12, m21, m22;
+};
+
+struct Polygon {
+    int vertex_count;
+    v2 *vertices;
+};
+
+struct Triangle {
+    v2 a, b, c;
 };
 
 inline v2
@@ -132,19 +138,19 @@ magnitude(v2 v) {
 }
 
 inline v2
-normal(Line l) {
+rnormal(Line l) {
     return v2{l.a.y - l.b.y, l.b.x - l.a.x};
 }
 
-inline v3
-operator+(v3 a, v3 b) {
-    return {a.x + b.x, a.y + b.y, a.z + b.z};
+inline v2
+lnormal(Line l) {
+    return -rnormal(l);
 }
 
-inline v3
-operator-(v3 a, v3 b) {
-    return {a.x - b.x, a.y - b.y, a.z - b.z};
-}
+inline v2
+operator*(M2 m, v2 v) {
+    return v2{m.m11 * v.x + m.m12 * v.y, m.m21 * v.x + m.m22 * v.y};
+};
 
 inline Rectangle
 operator+(Rectangle r, v2 offset) {
@@ -201,3 +207,48 @@ minkowski_sum(Rectangle a, Rectangle b) {
     return m;
 }
 
+// Check if polygon defined clockwise and convex
+bool
+validatePolygon(Polygon p) {
+    if (p.vertex_count < 3)
+        return false;
+    v2 pprev = p.vertices[0];
+    v2 prev = p.vertices[1];
+    bool result = true;
+    for (int i = 2; i < p.vertex_count; i++) {
+        v2 prev_norm = rnormal(Line{pprev, prev});
+        result = result && (dot(p.vertices[i] - pprev, prev_norm) >= 0);
+        pprev = prev;
+        prev = p.vertices[i];
+    }
+    return result;
+}
+
+bool
+isInsidePolygon(v2 point, Polygon poly) {
+    v2 a = poly.vertices[0];
+    bool result = true;
+    for (int i = 2; i < poly.vertex_count; i++) {
+        v2 b = poly.vertices[i];
+        v2 rnorm = rnormal(Line{a, b});
+        result = result && (dot(point - a, rnorm) >= 0);
+        a = b;
+    }
+    result = result && (dot(point - poly.vertices[poly.vertex_count], rnormal(Line{poly.vertices[poly.vertex_count], poly.vertices[0]})) >= 0);
+    return result;
+}
+
+inline bool
+isInsideTriangle(v2 point, Triangle t) {
+    return (dot(point - t.a, rnormal(Line{t.a, t.b})) >= 0 &&
+            dot(point - t.b, rnormal(Line{t.b, t.c})) >= 0 &&
+            dot(point - t.c, rnormal(Line{t.c, t.a})) >= 0);
+}
+
+inline Rectangle
+boundingBox(Triangle t) {
+    Rectangle r = {};
+    r.min = v2{min(min(t.a.x, t.b.x), t.c.x), min(min(t.a.y, t.b.y), t.c.y)};
+    r.max = v2{max(max(t.a.x, t.b.x), t.c.x), max(max(t.a.y, t.b.y), t.c.y)};
+    return r;
+}
