@@ -21,7 +21,7 @@ struct GameInput {
 };
 
 struct PixelBuffer {
-    char *data;
+    unsigned int *data;
     int width, height, bytes_per_pixel;
 };
 

@@ -143,8 +143,18 @@ rnormal(Line l) {
 }
 
 inline v2
+rnormal(v2 a, v2 b) {
+    return v2{a.y - b.y, b.x - a.x};
+}
+
+inline v2
 lnormal(Line l) {
     return -rnormal(l);
+}
+
+inline v2
+lnormal(v2 a, v2 b) {
+    return -rnormal(a, b);
 }
 
 inline v2
@@ -170,11 +180,12 @@ isPositive(Rectangle a) {
 }
 
 inline Rectangle
-intersection(Rectangle a, Rectangle b) {
-    Rectangle result = {};
-    result.min = {max(a.min.x, b.min.x), max(a.min.y, b.min.y)};
-    result.max = {min(a.max.x, b.max.x), min(a.max.y, b.max.y)};
-    return result;
+area_intersection(Rectangle a, Rectangle b) {
+    a.min.x = max(a.min.x, b.min.x);
+    a.min.y = max(a.min.y, b.min.y);
+    a.max.x = min(a.max.x, b.max.x);
+    a.max.y = min(a.max.y, b.max.y);
+    return a;
 }
 
 inline void get_sides(Rectangle a, Line*sides) {
@@ -251,4 +262,14 @@ boundingBox(Triangle t) {
     r.min = v2{min(min(t.a.x, t.b.x), t.c.x), min(min(t.a.y, t.b.y), t.c.y)};
     r.max = v2{max(max(t.a.x, t.b.x), t.c.x), max(max(t.a.y, t.b.y), t.c.y)};
     return r;
+}
+
+inline v2
+normalize(v2 v) {
+    float mag = magnitude(v);
+    if (abs(mag) < EPSILON)
+        return {0};
+    if (abs(mag - 1) < EPSILON)
+        return v;
+    return v / mag;
 }
