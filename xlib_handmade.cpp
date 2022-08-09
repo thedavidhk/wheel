@@ -10,7 +10,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
-#include "handmade_public.h"
+#include "handmade.h"
 
 
 double timeDiff(timespec start, timespec end)
@@ -75,13 +75,13 @@ int main(int argc, char **argv) {
     buffer.width = WIN_WIDTH;
     buffer.height = WIN_HEIGHT;
     buffer.bytes_per_pixel = 4;
-    buffer.data = (char*)malloc(buffer.width * buffer.height * buffer.bytes_per_pixel);
+    buffer.data = (unsigned int*)malloc(buffer.width * buffer.height * buffer.bytes_per_pixel);
 
 
 #if 1
     // TODO: Use shared memory? (see below)
     XImage *xWindowBuffer = XCreateImage(display, visinfo.visual,
-            visinfo.depth, ZPixmap, 0, buffer.data, buffer.width, buffer.height, buffer.bytes_per_pixel * 4, 0);
+            visinfo.depth, ZPixmap, 0, (char *)buffer.data, buffer.width, buffer.height, buffer.bytes_per_pixel * 4, 0);
 #else
     XShmSegmentInfo shminfo;
     XImage *xWindowBuffer = XShmCreateImage(display, visinfo.visual,

@@ -1,6 +1,8 @@
 #pragma once
 
+// TODO: have a different frame rate for physics!
 #define FRAME_RATE 30
+#define SIM_RATE 120
 #define WIN_WIDTH 800
 #define WIN_HEIGHT 600
 

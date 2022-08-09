@@ -10,9 +10,11 @@ typedef enum {
     CM_Shape            = 1 << 1,
     CM_Color            = 1 << 2,
     CM_Velocity         = 1 << 3,
-    CM_Actuator         = 1 << 4,
-    CM_Collision        = 1 << 5,
-    CM_BoxCollider      = 1 << 6
+    CM_Force            = 1 << 4,
+    CM_Mass             = 1 << 5,
+    CM_Friction         = 1 << 6,
+    CM_Collision        = 1 << 7,
+    CM_BoxCollider      = 1 << 8
 } ComponentMask; 
 
 struct VertexBuffer {
@@ -51,7 +53,19 @@ struct Player {
     Shape shape;
     unsigned int color;
     v2 velocity;
-    Actuator actuator;
+    float max_force;
+    float mass;
+    float friction;
+    Collision collision;
+};
+
+struct Moveable {
+    v2 pos;
+    Shape shape;
+    unsigned int color;
+    v2 velocity;
+    float mass;
+    float friction;
     Collision collision;
 };
 
@@ -74,7 +88,9 @@ struct GameState {
     Shape *shapes;
     unsigned int *colors;
     v2 *velocities;
-    Actuator *actuators;
+    float *forces;
+    float *masses;
+    float *frictions;
     Collision *collisions;
 };
 
@@ -88,7 +104,7 @@ static void
 clear_pixel_buffer(PixelBuffer b, unsigned int color);
 
 static void
-accelerate(v2 direction, float intensity, Actuator actuator, v2 *velocity, double d_t);
+accelerate(v2 direction, float force, float mass, float friction, v2 *velocity, double d_t);
 
 static v2
 world_to_screen_space(v2 coord, const Camera &camera);
@@ -134,7 +150,7 @@ static void
 update_components(GameState *g, unsigned int entity, int mask, void *data);
 
 static void
-update_positions(GameState *g, double d_t);
+update_movements(GameState *g, double d_t);
 
 static Collision
 check_collision(Shape *collider_a, Shape *collider_b, v2 pos);
@@ -143,7 +159,7 @@ static void
 handle_collisions(GameState *g, double d_t);
 
 static void
-resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a, v2 *vel_b);
+resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a, v2 *vel_b, float m_a, float m_b);
 
 static void
 resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a);
@@ -156,9 +172,10 @@ clear_pixel_buffer(PixelBuffer b, unsigned int color) {
 }
 
 static void
-accelerate(v2 direction, float intensity, Actuator actuator, v2 *velocity, double d_t) {
+accelerate(v2 direction, float force, float mass, float friction, v2 *velocity, double d_t) {
     direction = normalize(direction);
-    *velocity += (direction * intensity * actuator.max_acceleration - (*velocity) * actuator.friction) * d_t;
+    *velocity += (direction * force - (*velocity) * friction) * d_t;
+    // TODO: handle mass
 }
 
 static v2
@@ -305,9 +322,17 @@ update_components(GameState *g, unsigned int entity, int mask, void *data) {
         g->velocities[entity] = (v2)(*(v2 *)data);
         data = (v2 *)data + 1;
     }
-    if (mask & CM_Actuator) {
-        g->actuators[entity] = (Actuator)(*(Actuator *)data);
-        data = (Actuator *)data + 1;
+    if (mask & CM_Force) {
+        g->forces[entity] = (float)(*(float *)data);
+        data = (float *)data + 1;
+    }
+    if (mask & CM_Mass) {
+        g->masses[entity] = (float)(*(float *)data);
+        data = (float *)data + 1;
+    }
+    if (mask & CM_Friction) {
+        g->frictions[entity] = (float)(*(float *)data);
+        data = (float *)data + 1;
     }
     if (mask & CM_Collision) {
         g->collisions[entity] = (Collision)(*(Collision *)data);
@@ -316,10 +341,12 @@ update_components(GameState *g, unsigned int entity, int mask, void *data) {
 }
 
 static void
-update_positions(GameState *g, double d_t) {
+update_movements(GameState *g, double d_t) {
     static constexpr int MASK = (CM_Pos | CM_Velocity);
     for (int i = 0; i < g->entity_count; i++) {
         if ((g->entities[i] & MASK) == MASK)
+            if (g->entities[i] & CM_Friction)
+                g->velocities[i] -= g->velocities[i] * g->frictions[i] * d_t;
             g->positions[i] += g->velocities[i] * d_t;
     }
 }
@@ -333,6 +360,7 @@ check_collision(Shape a, Shape b, v2 pos_a, v2 pos_b, v2 vel_a, v2 vel_b, double
     int normal_count = a.index_count + b.index_count;
     assert(!(a.index_count > MAX_LINES || b.index_count > MAX_LINES));
 
+    // Get line normals as axes
     for (unsigned int i = 0; i < a.index_count - 1; i++) {
         normals[i] = lnormal(a.v_buffer[a.i[i]], a.v_buffer[a.i[i + 1]]);
     }
@@ -346,31 +374,37 @@ check_collision(Shape a, Shape b, v2 pos_a, v2 pos_b, v2 vel_a, v2 vel_b, double
     v2 min_overlap_axis;
 
     bool collides = true;
+
+    // Project vertices onto axes
     for (int i = 0; i < a.index_count + b.index_count; i++) {
         float min_a = FLT_MAX;
         float max_a = -FLT_MAX;
         float min_b = FLT_MAX;
         float max_b = -FLT_MAX;
+
         for (int a_i = 0; a_i < a.index_count; a_i++) {
             float x = dot(a.v_buffer[a.i[a_i]] + pos_a, normals[i]);
+            // Extend collider to include origin location
             float x_extended = dot(a.v_buffer[a.i[a_i]] + pos_a - vel_a * d_t, normals[i]);
             min_a = min(min(x, min_a), x_extended);
             max_a = max(max(x, max_a), x_extended);
         }
         for (int b_i = 0; b_i < b.index_count; b_i++) {
             float x = dot(b.v_buffer[b.i[b_i]] + pos_b, normals[i]);
+            // Extend collider to include origin location
             float x_extended = dot(b.v_buffer[b.i[b_i]] + pos_b - vel_b * d_t, normals[i]);
             min_b = min(min(x, min_b), x_extended);
             max_b = max(max(x, max_b), x_extended);
         }
-        if (min_a > max_b || max_a < min_b)
+        if (min_a >= max_b || max_a <= min_b)
             return result; // Does not collide
-        float overlap = min(max_a - min_b, max_b - min_a);
+
+        // Determine minimum translation vector
         float o1 = max_a - min_b;
         float o2 = max_b - min_a;
         float o = min(o1, o2);
-        if (overlap < min_overlap) {
-            min_overlap = overlap;
+        if (o < min_overlap) {
+            min_overlap = o;
             min_overlap_axis = normals[i];
             if (o1 < o2)
                 min_overlap_axis *= -1;                
@@ -379,22 +413,32 @@ check_collision(Shape a, Shape b, v2 pos_a, v2 pos_b, v2 vel_a, v2 vel_b, double
     result.collided = true;
     assert(min_overlap > (-EPSILON));
     result.mtv = normalize(min_overlap_axis) * min_overlap;
-    if (magnitude(result.mtv) > 1)
-        int break_here = true;
     return result;
 }
 
 static void
-resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a, v2 *vel_b) {
-    *vel_a -= projection(*vel_a, col.mtv);
+resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a, v2 *vel_b,
+                  float m_a, float m_b)
+{
+#if 1
+    v2 dv_a = projection(*vel_a, col.mtv);
+    v2 dv_b = projection(*vel_b, col.mtv);
+    v2 dv = m_b * dv_b + m_a * dv_a;
+    *vel_a += dv / (m_a + m_b) - dv_a;
+    *vel_b += dv / (m_a + m_b) - dv_b;
+#else
+    v2 va = (*vel_a);
+    v2 vb = (*vel_b);
+    *vel_a = (2 * m_b * vb + va * (m_a - m_b)) / (m_a + m_b);
+    *vel_b = (2 * m_a * va + vb * (m_b - m_a)) / (m_a + m_b);
+#endif
     *pos_a += (1 + EPSILON) * col.mtv;
-    // TODO: Handle response of other object
+    *pos_b -= (1 + EPSILON) * col.mtv;
 }
 
 static void
 resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a) {
     *vel_a -= projection(*vel_a, col.mtv);
-    // TODO: This only works for collisions in the positive directions!
     *pos_a += (1 + EPSILON) * col.mtv;
 }
 
@@ -402,7 +446,7 @@ static void
 handle_collisions(GameState *g, double d_t) {
     static constexpr int MASK = CM_Pos | CM_Collision;
     for (unsigned int i = 0; i < g->entity_count; i++) {
-        if ((g->entities[i] & (MASK | CM_Velocity)) != (MASK | CM_Velocity))
+        if ((g->entities[i] & (MASK | CM_Velocity | CM_Mass)) != (MASK | CM_Velocity | CM_Mass))
             continue;
         for (unsigned int j = 0; j < g->entity_count; j++) {
             if (i == j || (g->entities[j] & MASK) != MASK)
@@ -410,9 +454,10 @@ handle_collisions(GameState *g, double d_t) {
             Collision col = check_collision(g->shapes[i], g->shapes[j],
                     g->positions[i], g->positions[j], g->velocities[i],
                     g->velocities[j], d_t); if (col.collided) {
-                if (g->entities[j] & CM_Velocity) {
+                if (g->entities[j] == (g->entities[j] | CM_Velocity | CM_Mass)) {
                     resolve_collision(col, &g->positions[i], &g->positions[j],
-                            &g->velocities[i], &g->velocities[j]);
+                            &g->velocities[i], &g->velocities[j],
+                            g->masses[i], g->masses[j]);
                 } else {
                     resolve_collision(col, &g->positions[i], &g->positions[j],
                             &g->velocities[i]);
@@ -459,7 +504,9 @@ initializeGame(unsigned long long mem_size) {
     gs->shapes = (Shape *)get_memory(&mem, gs->max_entity_count * sizeof(Shape));
     gs->colors = (unsigned int *)get_memory(&mem, gs->max_entity_count * sizeof(unsigned int));
     gs->velocities = (v2 *)get_memory(&mem, gs->max_entity_count * sizeof(v2));
-    gs->actuators = (Actuator *)get_memory(&mem, gs->max_entity_count * sizeof(Actuator));
+    gs->forces = (float *)get_memory(&mem, gs->max_entity_count * sizeof(float));
+    gs->masses = (float *)get_memory(&mem, gs->max_entity_count * sizeof(float));
+    gs->frictions = (float *)get_memory(&mem, gs->max_entity_count * sizeof(float));
     gs->collisions = (Collision *)get_memory(&mem, gs->max_entity_count * sizeof(Collision));
 
     // Initialize camera.
@@ -501,14 +548,26 @@ initializeGame(unsigned long long mem_size) {
         7, 0, 3
     };
 #endif
-    int player_mask = CM_Pos | CM_Shape | CM_Color | CM_Velocity | CM_Actuator | CM_Collision;
+    int player_mask = CM_Pos | CM_Shape | CM_Color | CM_Velocity | CM_Force |
+        CM_Mass | CM_Friction | CM_Collision;
     gs->player_index = add_entity(gs, player_mask);
     Player player = {
+    //CM_Pos              = 1 << 0,
+    //CM_Shape            = 1 << 1,
+    //CM_Color            = 1 << 2,
+    //CM_Velocity         = 1 << 3,
+    //CM_Force            = 1 << 4,
+    //CM_Mass             = 1 << 5,
+    //CM_Friction         = 1 << 6
+    //CM_Collision        = 1 << 7,
+    //CM_BoxCollider      = 1 << 8,
         .pos = {0, 0},
         .shape = create_polygon(vb, ib, vertices, count_v, indices, count_i),
         .color = 0xFFFFCC55,
         .velocity = {0, 0},
-        .actuator = {40, 3},
+        .max_force = 40,
+        .mass = 1,
+        .friction = 3,
         .collision = {0}
     };
     update_components(gs, gs->player_index, player_mask, (void *)&player);
@@ -523,11 +582,33 @@ initializeGame(unsigned long long mem_size) {
     };
     update_components(gs, wall, scenery_mask, (void *)&wall_data);
 
+
+//struct Moveable {
+//    v2 pos;
+//    Shape shape;
+//    unsigned int color;
+//    v2 velocity;
+//    Collision collision;
+//};
+
+
+    int moveable_mask = CM_Pos | CM_Shape | CM_Color | CM_Collision | CM_Velocity | CM_Mass | CM_Friction;
+    unsigned int pebble = add_entity(gs, moveable_mask);
+    Moveable pebble_data = {
+        .pos = {6, -1},
+        .shape = create_polygon(vb, ib, vertices, count_v, indices, count_i),
+        .color = 0xFF44CC33,
+        .velocity = {-10, 0},
+        .mass = 1,
+        .friction = 1,
+        .collision = {0}
+    };
+    update_components(gs, pebble, moveable_mask, (void *)&pebble_data);
     return mem;
 }
 
 void
-gameUpdateAndRender(double d_t, GameMemory mem, GameInput *input, PixelBuffer buffer) {
+gameUpdateAndRender(double frame_time, GameMemory mem, GameInput *input, PixelBuffer buffer) {
     MemoryLayout *ml = (MemoryLayout *)mem.data;
     GameState *game_state = ml->gs;
     VertexBuffer *vb = ml->vb;
@@ -545,16 +626,19 @@ gameUpdateAndRender(double d_t, GameMemory mem, GameInput *input, PixelBuffer bu
     int p = game_state->player_index;
 
     // PHYSICS
-    accelerate(dir, 1.0f, game_state->actuators[p], &game_state->velocities[p], d_t);
-    update_positions(game_state, d_t);
-
-    handle_collisions(game_state, d_t);
+    int sims_per_frame = 0;
+    while (frame_time > 0.0) {
+        double d_t = min(frame_time, 1.0d / SIM_RATE);
+        accelerate(dir, 1.0f * game_state->forces[p], game_state->masses[p], game_state->frictions[p], &game_state->velocities[p], d_t);
+        update_movements(game_state, d_t);
+        handle_collisions(game_state, d_t);
+        frame_time -= d_t;
+        sims_per_frame++;
+    }
 
     // RENDER
     clear_pixel_buffer(buffer, 0);
     draw_entities(game_state, vb, buffer);
 
-    if (d_t > 1.0f/(FRAME_RATE-1))
-        printf("Frame rate drop: %.2f FPS\n", 1/d_t);
 }
 
