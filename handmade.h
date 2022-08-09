@@ -8,7 +8,7 @@
 #define megabytes(value) (kilobytes(value) * 1024)
 #define gigabytes(value) (megabytes(value) * 1024)
 
-#define assert(b) do { if (!b) {printf("Assertion failed: %s in line %d of file %s\n", __STRING(b), __LINE__, __FILE__); exit(1);} } while (0)
+#define assert(b) do { if (!(b)) {printf("Assertion failed: %s in line %d of file %s\n", __STRING(b), __LINE__, __FILE__); exit(1);} } while (0)
 
 struct GameMemory {
     unsigned long long size;

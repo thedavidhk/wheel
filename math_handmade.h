@@ -2,9 +2,9 @@
 
 #include <math.h>
 
-#define min(a, b) (a < b ? a : b)
-#define max(a, b) (a < b ? b : a)
-#define abs(a) (a >= 0 ? a : -a)
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) < (b) ? (b) : (a))
+#define abs(a) ((a) >= 0 ? (a) : (-(a)))
 
 #define EPSILON 0.001f
 
@@ -272,4 +272,9 @@ normalize(v2 v) {
     if (abs(mag - 1) < EPSILON)
         return v;
     return v / mag;
+}
+
+inline v2
+projection(v2 a, v2 b) {
+    return b * dot(a, b) / dot(b, b);
 }
