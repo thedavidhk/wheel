@@ -109,12 +109,6 @@ accelerate(v2 direction, float force, float mass, float friction, v2 *velocity, 
 static v2
 world_to_screen_space(v2 coord, const Camera &camera);
 
-static Rectangle
-world_to_screen_space(Rectangle rect, const Camera &camera);
-
-static Triangle
-world_to_screen_space(Triangle t, const Camera &camera);
-
 static void*
 get_memory(GameMemory *mem, unsigned long long size);
 
@@ -125,17 +119,8 @@ create_polygon(VertexBuffer *vb, IndexBuffer *ib, const v2 *verts, unsigned int
 static Shape
 create_rectangle(VertexBuffer *vb, IndexBuffer *ib, v2 min, v2 max);
 
-static bool
-is_on_screen(v2 point, const Camera &camera);
-
-static Rectangle
-bounding_box(v2 *v, int count);
-
-static bool
-is_inside_triangle(v2 p, v2 a, v2 b, v2 c);
-
 static void
-draw_triangle(const Camera &camera, PixelBuffer b, unsigned int *index, v2 *vertex_buffer, v2 pos, unsigned int color);
+draw_triangle(const Camera &camera, PixelBuffer b, v2 p0, v2 p1, v2 p2, unsigned int color);
 
 static void
 draw_shape(const Camera &camera, PixelBuffer b, Shape s, v2 *vertex_buffer, v2 pos, unsigned int color);
@@ -150,10 +135,13 @@ static void
 update_components(GameState *g, unsigned int entity, int mask, void *data);
 
 static void
-update_movements(GameState *g, double d_t);
+update_velocities(GameState *g, double d_t);
+
+static void
+update_positions(GameState *g, double d_t);
 
 static Collision
-check_collision(Shape *collider_a, Shape *collider_b, v2 pos);
+check_collision(Shape a, Shape b, v2 pos_a, v2 pos_b, v2 vel_a, v2 vel_b, double d_t);
 
 static void
 handle_collisions(GameState *g, double d_t);
@@ -166,7 +154,7 @@ resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a);
 
 static void
 clear_pixel_buffer(PixelBuffer b, unsigned int color) {
-    for (unsigned int i = 0; i < b.width * b.height; i ++) {
+    for (int i = 0; i < b.width * b.height; i ++) {
         b.data[i] = color;
     }
 }
@@ -174,7 +162,7 @@ clear_pixel_buffer(PixelBuffer b, unsigned int color) {
 static void
 accelerate(v2 direction, float force, float mass, float friction, v2 *velocity, double d_t) {
     direction = normalize(direction);
-    *velocity += (direction * force - (*velocity) * friction) * d_t;
+    *velocity += (direction * force) * d_t;
     // TODO: handle mass
 }
 
@@ -182,16 +170,6 @@ static v2
 world_to_screen_space(v2 coord, const Camera &camera) {
     v2 offset = {camera.width / 2.0f, camera.height / 2.0f};
     return (coord - camera.pos) * camera.scale + offset;
-}
-
-static Rectangle
-world_to_screen_space(Rectangle rect, const Camera &camera) {
-    return Rectangle(world_to_screen_space(rect.min, camera), world_to_screen_space(rect.max, camera));
-}
-
-static Triangle
-world_to_screen_space(Triangle t, const Camera &camera) {
-    return Triangle{world_to_screen_space(t.a, camera), world_to_screen_space(t.b, camera), world_to_screen_space(t.c, camera)};
 }
 
 static void*
@@ -210,10 +188,13 @@ create_polygon(VertexBuffer *vb, IndexBuffer *ib, const v2 *verts, unsigned int 
     Shape p = {};
     p.v_buffer = vb->vertices;
     p.index_count = count_i;
-    memcpy(vb->vertices + vb->count, verts, count_v * sizeof(*verts));
-    vb->count += count_v;
     p.i = ib->indices + ib->count;
+    memcpy(vb->vertices + vb->count, verts, count_v * sizeof(*verts));
     memcpy(p.i, indices, count_i * sizeof(*indices));
+    for (unsigned int i = 0; i < count_i; i++) {
+        p.i[i] += vb->count;
+    }
+    vb->count += count_v;
     ib->count += count_i;
     return p;
 };
@@ -225,74 +206,66 @@ create_rectangle(VertexBuffer *vb, IndexBuffer *ib, v2 min, v2 max) {
     return create_polygon(vb, ib, verts, 4, indices, 6);
 };
 
-static bool
-is_on_screen(v2 point, const Camera &camera) {
-    return (point.x >= 0 && point.x <= camera.width && point.y >= 0 && point.y < camera.height);
-};
+static void
+draw_triangle(const Camera &camera, PixelBuffer b, v2 p0, v2 p1, v2 p2, unsigned int color) {
+    v2 tri[3];
+    tri[0] = world_to_screen_space(p0, camera);
+    tri[1] = world_to_screen_space(p1, camera);
+    tri[2] = world_to_screen_space(p2, camera);
+    int top;
+    if (tri[0].y < tri[1].y)
+        if (tri[0].y < tri[2].y)
+            top = 0;
+        else
+            top = 2;
+    else
+        top = 1;
+    v2 p[3];
+    p[0] = tri[top];
+    p[1] = tri[(top + 1) % 3];
+    p[2] = tri[(top + 2) % 3];
 
-static Rectangle
-bounding_box(v2 *v, int count) {
-    v2 min = {FLT_MAX, FLT_MAX};
-    v2 max = {FLT_MIN, FLT_MIN};
-    for (int i = 0; i < count; i++) {
-        if (v[i].x < min.x)
-            min.x = v[i].x;
-        if (v[i].y < min.y)
-            min.y = v[i].y;
-        if (v[i].x > max.x)
-            max.x = v[i].x;
-        if (v[i].y > max.y)
-            max.y = v[i].y;
+    //v2 tmp = p[1];
+    //p[1] = p[2];
+    //p[2] = tmp;
+
+    float dx_upper = (p[1].x - p[0].x) / (1 + p[1].y - p[0].y);
+    float dx_lower = (p[2].x - p[1].x) / (1 + p[2].y - p[1].y);
+    float dx_other = (p[2].x - p[0].x) / (1 + p[2].y - p[0].y);
+    float x_start = p[0].x;
+    float x_end = x_start + dx_upper;
+    for (int y = p[0].y; y <= max(b.height-1, (int)max(p[1].y, p[2].y)); y++) {
+        if (y >= 0) {
+            for (int x = max((int)x_start, 0); x <= min(b.width-1, (int)x_end); x++) {
+                b.data[x + y * b.width] = color;
+            }
+            for (int x = min((int)x_start, 0); x >= max(0, (int)x_start); x--) {
+                b.data[x + y * b.width] = color;
+            }
+        }
+        x_start += dx_other;
+        if (y < min(p[1].y, p[2].y))
+            x_end += dx_upper;
+        else
+            x_end += dx_lower;
     }
-    return Rectangle(min, max);
-};
-
-static bool
-is_inside_triangle(v2 p, v2 a, v2 b, v2 c) {
-    return (dot(p - a, rnormal(Line{a, b})) >= 0 &&
-            dot(p - b, rnormal(Line{b, c})) >= 0 &&
-            dot(p - c, rnormal(Line{c, a})) >= 0);
 }
 
 static void
-draw_triangle(const Camera &camera, PixelBuffer b, unsigned int *index, v2 *vertex_buffer, v2 pos, unsigned int color) {
-    bool off_screen = true;
-    v2 tri[3];
-    for (int i = 0; i < 3; i++) {
-        tri[i] = world_to_screen_space(vertex_buffer[index[i]] + pos, camera);
-        off_screen = off_screen && (!is_on_screen(tri[i], camera));
-    }
-    if (off_screen)
-        return;
-
-    Rectangle screen = Rectangle{v2{0, 0}, v2{(float)camera.width, (float)camera.height}};
-    Rectangle draw_area = area_intersection(bounding_box(tri, 3), screen);
-    for (int y = draw_area.min.y; y < draw_area.max.y; y++) {
-        unsigned int *row = (unsigned int *)(b.data + y * b.width);
-        bool drawn = false;
-        for (int x = draw_area.min.x; x < draw_area.max.x; x++) {
-            unsigned int *p = row + x;
-            if (is_inside_triangle({(float)x, (float)y}, tri[0], tri[1], tri[2])) {
-                *p = color;
-                drawn = true;
-            } else if (drawn) {
-                break; // If row has been drawn, skip to next row
-            }
-        }
-    }
-};
-
-static void
 draw_shape(const Camera &camera, PixelBuffer b, Shape s, v2 *vertex_buffer, v2 pos, unsigned int color) {
-    for (int i = 0; i < s.index_count; i += 3) {
-        draw_triangle(camera, b, s.i + i, vertex_buffer, pos, color);
+    for (unsigned int i = 0; i < s.index_count; i += 3) {
+        //draw_triangle(camera, b, s.i + i, vertex_buffer, pos, color);
+        v2 p0 = vertex_buffer[s.i[i]] + pos;
+        v2 p1 = vertex_buffer[s.i[i + 1]] + pos;
+        v2 p2 = vertex_buffer[s.i[i + 2]] + pos;
+        draw_triangle(camera, b, p0, p1, p2, color);
     }
 }
 
 static void
 draw_entities(GameState *g, VertexBuffer *vb, PixelBuffer b) {
     static constexpr int MASK = CM_Shape | CM_Pos | CM_Color;
-    for (int i = 0; i < g->entity_count; i++) {
+    for (unsigned int i = 0; i < g->entity_count; i++) {
         if ((g->entities[i] & MASK) == MASK)
             draw_shape(g->camera, b, g->shapes[i], vb->vertices, g->positions[i], g->colors[i]);
     }
@@ -341,23 +314,34 @@ update_components(GameState *g, unsigned int entity, int mask, void *data) {
 }
 
 static void
-update_movements(GameState *g, double d_t) {
+update_velocities(GameState *g, double d_t) {
     static constexpr int MASK = (CM_Pos | CM_Velocity);
-    for (int i = 0; i < g->entity_count; i++) {
-        if ((g->entities[i] & MASK) == MASK)
+    for (unsigned int i = 0; i < g->entity_count; i++) {
+        if ((g->entities[i] & MASK) == MASK) {
+            if (g->entities[i] & CM_Mass)
+                g->velocities[i] += v2{0, 1} * 9.87 * d_t;
             if (g->entities[i] & CM_Friction)
                 g->velocities[i] -= g->velocities[i] * g->frictions[i] * d_t;
+        }
+    }
+}
+
+static void
+update_positions(GameState *g, double d_t) {
+    static constexpr int MASK = (CM_Pos | CM_Velocity);
+    for (unsigned int i = 0; i < g->entity_count; i++) {
+        if ((g->entities[i] & MASK) == MASK) {
             g->positions[i] += g->velocities[i] * d_t;
+        }
     }
 }
 
 Collision
 check_collision(Shape a, Shape b, v2 pos_a, v2 pos_b, v2 vel_a, v2 vel_b, double d_t) {
-    // TODO: Find a better solution. Should I allocate memory for this?
+    // TODO: Probably allocate memory to allow for a larger number of lines.
     Collision result = {};
     constexpr int MAX_LINES = 64;
     v2 normals[MAX_LINES];
-    int normal_count = a.index_count + b.index_count;
     assert(!(a.index_count > MAX_LINES || b.index_count > MAX_LINES));
 
     // Get line normals as axes
@@ -373,26 +357,25 @@ check_collision(Shape a, Shape b, v2 pos_a, v2 pos_b, v2 vel_a, v2 vel_b, double
     float min_overlap = FLT_MAX;
     v2 min_overlap_axis;
 
-    bool collides = true;
-
     // Project vertices onto axes
-    for (int i = 0; i < a.index_count + b.index_count; i++) {
+    for (unsigned int i = 0; i < a.index_count + b.index_count; i++) {
         float min_a = FLT_MAX;
         float max_a = -FLT_MAX;
         float min_b = FLT_MAX;
         float max_b = -FLT_MAX;
+        normals[i] = normalize(normals[i]);
 
-        for (int a_i = 0; a_i < a.index_count; a_i++) {
+        for (unsigned int a_i = 0; a_i < a.index_count; a_i++) {
             float x = dot(a.v_buffer[a.i[a_i]] + pos_a, normals[i]);
             // Extend collider to include origin location
-            float x_extended = dot(a.v_buffer[a.i[a_i]] + pos_a - vel_a * d_t, normals[i]);
+            float x_extended = dot(a.v_buffer[a.i[a_i]] + pos_a + vel_a * d_t, normals[i]);
             min_a = min(min(x, min_a), x_extended);
             max_a = max(max(x, max_a), x_extended);
         }
-        for (int b_i = 0; b_i < b.index_count; b_i++) {
+        for (unsigned int b_i = 0; b_i < b.index_count; b_i++) {
             float x = dot(b.v_buffer[b.i[b_i]] + pos_b, normals[i]);
             // Extend collider to include origin location
-            float x_extended = dot(b.v_buffer[b.i[b_i]] + pos_b - vel_b * d_t, normals[i]);
+            float x_extended = dot(b.v_buffer[b.i[b_i]] + pos_b + vel_b * d_t, normals[i]);
             min_b = min(min(x, min_b), x_extended);
             max_b = max(max(x, max_b), x_extended);
         }
@@ -420,26 +403,19 @@ static void
 resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a, v2 *vel_b,
                   float m_a, float m_b)
 {
-#if 1
     v2 dv_a = projection(*vel_a, col.mtv);
     v2 dv_b = projection(*vel_b, col.mtv);
     v2 dv = m_b * dv_b + m_a * dv_a;
     *vel_a += dv / (m_a + m_b) - dv_a;
     *vel_b += dv / (m_a + m_b) - dv_b;
-#else
-    v2 va = (*vel_a);
-    v2 vb = (*vel_b);
-    *vel_a = (2 * m_b * vb + va * (m_a - m_b)) / (m_a + m_b);
-    *vel_b = (2 * m_a * va + vb * (m_b - m_a)) / (m_a + m_b);
-#endif
-    *pos_a += (1 + EPSILON) * col.mtv;
-    *pos_b -= (1 + EPSILON) * col.mtv;
+    *pos_a += col.mtv;
+    *pos_b -= col.mtv;
 }
 
 static void
 resolve_collision(Collision col, v2 *pos_a, v2 *pos_b, v2 *vel_a) {
     *vel_a -= projection(*vel_a, col.mtv);
-    *pos_a += (1 + EPSILON) * col.mtv;
+    *pos_a += col.mtv;
 }
 
 static void
@@ -518,49 +494,19 @@ initializeGame(unsigned long long mem_size) {
     // Initialize player.
     constexpr unsigned int count_v = 3;
     v2 vertices[count_v] = {
-        { 0.0, -0.5},
-        { 0.5,  0.5},
+        {-0.5, -0.5},
+        { 0.5, -0.3},
         {-0.5,  0.5}
     };
     constexpr unsigned int count_i = 3;
     unsigned int indices[count_i] = {
         0, 1, 2
     };
-#if 0
-    constexpr unsigned int count_v = 8;
-    v2 vertices[count_v] = {
-        {-0.5, -0.5},
-        { 0.5, -0.5},
-        { 0.5,  0.5},
-        {-0.5,  0.5},
-        { 0.0, -2.5},
-        { 2.5,  0.0},
-        { 0.0,  2.5},
-        {-2.5,  0.0}
-    };
-    constexpr unsigned int count_i = 18;
-    unsigned int indices[count_i] = {
-        0, 1, 2,
-        0, 2, 3,
-        4, 1, 0,
-        5, 2, 1,
-        6, 3, 2,
-        7, 0, 3
-    };
-#endif
+
     int player_mask = CM_Pos | CM_Shape | CM_Color | CM_Velocity | CM_Force |
         CM_Mass | CM_Friction | CM_Collision;
     gs->player_index = add_entity(gs, player_mask);
     Player player = {
-    //CM_Pos              = 1 << 0,
-    //CM_Shape            = 1 << 1,
-    //CM_Color            = 1 << 2,
-    //CM_Velocity         = 1 << 3,
-    //CM_Force            = 1 << 4,
-    //CM_Mass             = 1 << 5,
-    //CM_Friction         = 1 << 6
-    //CM_Collision        = 1 << 7,
-    //CM_BoxCollider      = 1 << 8,
         .pos = {0, 0},
         .shape = create_polygon(vb, ib, vertices, count_v, indices, count_i),
         .color = 0xFFFFCC55,
@@ -582,15 +528,14 @@ initializeGame(unsigned long long mem_size) {
     };
     update_components(gs, wall, scenery_mask, (void *)&wall_data);
 
-
-//struct Moveable {
-//    v2 pos;
-//    Shape shape;
-//    unsigned int color;
-//    v2 velocity;
-//    Collision collision;
-//};
-
+    unsigned int floor = add_entity(gs, scenery_mask);
+    Scenery floor_data = {
+        .pos = {0, 6},
+        .shape = create_rectangle(vb, ib, {-20, -0.5}, {20, 0.5}),
+        .color = 0xFFFFFFFF,
+        .collision = {0}
+    };
+    update_components(gs, floor, scenery_mask, (void *)&floor_data);
 
     int moveable_mask = CM_Pos | CM_Shape | CM_Color | CM_Collision | CM_Velocity | CM_Mass | CM_Friction;
     unsigned int pebble = add_entity(gs, moveable_mask);
@@ -613,6 +558,9 @@ gameUpdateAndRender(double frame_time, GameMemory mem, GameInput *input, PixelBu
     GameState *game_state = ml->gs;
     VertexBuffer *vb = ml->vb;
 
+    // TODO: Find a more elegant solution
+    static bool pause = false;
+
     // INPUT
     v2 dir = {0};
     if (input->up)
@@ -623,22 +571,25 @@ gameUpdateAndRender(double frame_time, GameMemory mem, GameInput *input, PixelBu
         dir += v2{-1, 0};
     if (input->right)
         dir += v2{1, 0};
+    if (input->pause)
+        pause = !pause;
     int p = game_state->player_index;
 
+    if (pause)
+        return;
+
     // PHYSICS
-    int sims_per_frame = 0;
     while (frame_time > 0.0) {
         double d_t = min(frame_time, 1.0d / SIM_RATE);
         accelerate(dir, 1.0f * game_state->forces[p], game_state->masses[p], game_state->frictions[p], &game_state->velocities[p], d_t);
-        update_movements(game_state, d_t);
+        update_velocities(game_state, d_t);
         handle_collisions(game_state, d_t);
+        update_positions(game_state, d_t);
         frame_time -= d_t;
-        sims_per_frame++;
     }
 
     // RENDER
     clear_pixel_buffer(buffer, 0);
     draw_entities(game_state, vb, buffer);
-
 }
 

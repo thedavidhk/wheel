@@ -139,6 +139,10 @@ int main(int argc, char **argv) {
                                        input.up = true;
                                    if(e->keycode == XKeysymToKeycode(display, XK_Down))
                                        input.down = true;
+                                   if(e->keycode == XKeysymToKeycode(display, XK_space))
+                                       input.pause = true;
+                                   if(e->keycode == XKeysymToKeycode(display, XK_A))
+                                       input.fwd = true;
                                } break;
                 case KeyRelease: {
                                    XKeyReleasedEvent *e = (XKeyReleasedEvent*) &ev;
@@ -150,6 +154,10 @@ int main(int argc, char **argv) {
                                        input.up = false;
                                    if(e->keycode == XKeysymToKeycode(display, XK_Down))
                                        input.down = false;
+                                   if(e->keycode == XKeysymToKeycode(display, XK_space))
+                                       input.pause = false;
+                                   if(e->keycode == XKeysymToKeycode(display, XK_A))
+                                       input.fwd = false;
                                } break;
                 default:
                                  XFlush(display);

@@ -19,7 +19,7 @@ struct GameMemory {
 };
 
 struct GameInput {
-    bool up, down, left, right;
+    bool up, down, left, right, pause, fwd;
 };
 
 struct PixelBuffer {
