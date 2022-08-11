@@ -27,10 +27,6 @@ struct IndexBuffer {
     unsigned int count, max_count;
 };
 
-struct Actuator {
-    float max_acceleration, friction;
-};
-
 struct Camera {
     v2 pos;
     float scale; // pixels per meter
@@ -41,6 +37,11 @@ struct Shape {
     v2 *v_buffer;
     unsigned int *i;
     unsigned int index_count;
+};
+
+struct Mass {
+    v2 com;
+    float value;
 };
 
 struct Collision {
@@ -54,7 +55,7 @@ struct Player {
     unsigned int color;
     v2 velocity;
     float max_force;
-    float mass;
+    Mass mass;
     float friction;
     Collision collision;
 };
@@ -64,7 +65,7 @@ struct Moveable {
     Shape shape;
     unsigned int color;
     v2 velocity;
-    float mass;
+    Mass mass;
     float friction;
     Collision collision;
 };
@@ -89,7 +90,7 @@ struct GameState {
     unsigned int *colors;
     v2 *velocities;
     float *forces;
-    float *masses;
+    Mass *masses;
     float *frictions;
     Collision *collisions;
 };
@@ -162,8 +163,7 @@ clear_pixel_buffer(PixelBuffer b, unsigned int color) {
 static void
 accelerate(v2 direction, float force, float mass, float friction, v2 *velocity, double d_t) {
     direction = normalize(direction);
-    *velocity += (direction * force) * d_t;
-    // TODO: handle mass
+    *velocity += (direction * force/mass) * d_t;
 }
 
 static v2
@@ -207,14 +207,24 @@ create_rectangle(VertexBuffer *vb, IndexBuffer *ib, v2 min, v2 max) {
 };
 
 static void
+debug_draw_point(PixelBuffer b, v2 p, float radius, unsigned int color) {
+    for (int y = max(0, p.y - radius); y <= min(b.height - 1, p.y + radius); y++) {
+        for (int x = max(0, p.x - radius); x <= min(b.height - 1, p.x + radius); x++) {
+            if (magnitude(v2{(float)x, (float)y} - p) <= radius)
+                b.data[x + y * b.width] = color;
+        }
+    }
+}
+
+static void
 draw_triangle(const Camera &camera, PixelBuffer b, v2 p0, v2 p1, v2 p2, unsigned int color) {
     v2 tri[3];
     tri[0] = world_to_screen_space(p0, camera);
     tri[1] = world_to_screen_space(p1, camera);
     tri[2] = world_to_screen_space(p2, camera);
     int top;
-    if (tri[0].y < tri[1].y)
-        if (tri[0].y < tri[2].y)
+    if (tri[0].y <= tri[1].y + EPSILON)
+        if (tri[0].y <= tri[2].y + EPSILON)
             top = 0;
         else
             top = 2;
@@ -225,29 +235,35 @@ draw_triangle(const Camera &camera, PixelBuffer b, v2 p0, v2 p1, v2 p2, unsigned
     p[1] = tri[(top + 1) % 3];
     p[2] = tri[(top + 2) % 3];
 
-    //v2 tmp = p[1];
-    //p[1] = p[2];
-    //p[2] = tmp;
+    //debug_draw_point(b, p[0], 5, 0xFFFF0000);
+    //debug_draw_point(b, p[1], 5, 0xFF00FF00);
+    //debug_draw_point(b, p[2], 5, 0xFF0000FF);
 
-    float dx_upper = (p[1].x - p[0].x) / (1 + p[1].y - p[0].y);
-    float dx_lower = (p[2].x - p[1].x) / (1 + p[2].y - p[1].y);
-    float dx_other = (p[2].x - p[0].x) / (1 + p[2].y - p[0].y);
+    float dx_start_high = (p[0].x - p[2].x) / (p[0].y - p[2].y);
+    float dx_start_low = (p[1].x - p[2].x) / (p[1].y - p[2].y);
+    float dx_end_high = (p[1].x - p[0].x) / (p[1].y - p[0].y);
+    float dx_end_low = (p[1].x - p[2].x) / (p[1].y - p[2].y);
     float x_start = p[0].x;
-    float x_end = x_start + dx_upper;
-    for (int y = p[0].y; y <= max(b.height-1, (int)max(p[1].y, p[2].y)); y++) {
+    float x_end = x_start;
+    if (p[0].y >= p[1].y - EPSILON)
+        x_end = p[1].x;
+    float y_start = p[0].y;
+    float y_end = min(b.height - 1, (int) max(p[1].y, p[2].y));
+
+    for (int y = y_start; y <= y_end; y++) {
         if (y >= 0) {
-            for (int x = max((int)x_start, 0); x <= min(b.width-1, (int)x_end); x++) {
-                b.data[x + y * b.width] = color;
-            }
-            for (int x = min((int)x_start, 0); x >= max(0, (int)x_start); x--) {
-                b.data[x + y * b.width] = color;
+            for (int x = max(0, (int)x_start); x < min(b.width, (int)x_end); x++) {
+                b.data[x + y * (b.width)] = color;
             }
         }
-        x_start += dx_other;
-        if (y < min(p[1].y, p[2].y))
-            x_end += dx_upper;
+        if (y < p[1].y - 1 + EPSILON)
+            x_end += dx_end_high;
         else
-            x_end += dx_lower;
+            x_end += dx_end_low;
+        if (y < p[2].y - 1 + EPSILON)
+            x_start += dx_start_high;
+        else
+            x_start += dx_start_low;
     }
 }
 
@@ -300,8 +316,8 @@ update_components(GameState *g, unsigned int entity, int mask, void *data) {
         data = (float *)data + 1;
     }
     if (mask & CM_Mass) {
-        g->masses[entity] = (float)(*(float *)data);
-        data = (float *)data + 1;
+        g->masses[entity] = (Mass)(*(Mass *)data);
+        data = (Mass *)data + 1;
     }
     if (mask & CM_Friction) {
         g->frictions[entity] = (float)(*(float *)data);
@@ -433,7 +449,7 @@ handle_collisions(GameState *g, double d_t) {
                 if (g->entities[j] == (g->entities[j] | CM_Velocity | CM_Mass)) {
                     resolve_collision(col, &g->positions[i], &g->positions[j],
                             &g->velocities[i], &g->velocities[j],
-                            g->masses[i], g->masses[j]);
+                            g->masses[i].value, g->masses[j].value);
                 } else {
                     resolve_collision(col, &g->positions[i], &g->positions[j],
                             &g->velocities[i]);
@@ -481,7 +497,7 @@ initializeGame(unsigned long long mem_size) {
     gs->colors = (unsigned int *)get_memory(&mem, gs->max_entity_count * sizeof(unsigned int));
     gs->velocities = (v2 *)get_memory(&mem, gs->max_entity_count * sizeof(v2));
     gs->forces = (float *)get_memory(&mem, gs->max_entity_count * sizeof(float));
-    gs->masses = (float *)get_memory(&mem, gs->max_entity_count * sizeof(float));
+    gs->masses = (Mass *)get_memory(&mem, gs->max_entity_count * sizeof(Mass));
     gs->frictions = (float *)get_memory(&mem, gs->max_entity_count * sizeof(float));
     gs->collisions = (Collision *)get_memory(&mem, gs->max_entity_count * sizeof(Collision));
 
@@ -512,7 +528,7 @@ initializeGame(unsigned long long mem_size) {
         .color = 0xFFFFCC55,
         .velocity = {0, 0},
         .max_force = 40,
-        .mass = 1,
+        .mass = {v2{0,0}, 1},
         .friction = 3,
         .collision = {0}
     };
@@ -544,7 +560,7 @@ initializeGame(unsigned long long mem_size) {
         .shape = create_polygon(vb, ib, vertices, count_v, indices, count_i),
         .color = 0xFF44CC33,
         .velocity = {-10, 0},
-        .mass = 1,
+        .mass = {v2{0,0}, 1},
         .friction = 1,
         .collision = {0}
     };
@@ -581,7 +597,7 @@ gameUpdateAndRender(double frame_time, GameMemory mem, GameInput *input, PixelBu
     // PHYSICS
     while (frame_time > 0.0) {
         double d_t = min(frame_time, 1.0d / SIM_RATE);
-        accelerate(dir, 1.0f * game_state->forces[p], game_state->masses[p], game_state->frictions[p], &game_state->velocities[p], d_t);
+        accelerate(dir, 1.0f * game_state->forces[p], game_state->masses[p].value, game_state->frictions[p], &game_state->velocities[p], d_t);
         update_velocities(game_state, d_t);
         handle_collisions(game_state, d_t);
         update_positions(game_state, d_t);
