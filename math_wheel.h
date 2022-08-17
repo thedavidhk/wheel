@@ -1,10 +1,13 @@
-#pragma once
+#ifndef MATH_WHEEL_H
+#define MATH_WHEEL_H
 
 #include <math.h>
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) < (b) ? (b) : (a))
 #define abs(a) ((a) >= 0 ? (a) : (-(a)))
+
+#define round(a) (int)(a + 0.5)
 
 #define EPSILON 0.001f
 
@@ -64,6 +67,30 @@ struct Polygon {
 struct Triangle {
     v2 a, b, c;
 };
+
+inline int
+v2_compare_x(const void *a, const void *b) {
+    const v2 *va = (v2 *)a;
+    const v2 *vb = (v2 *)b;
+    if (va->x > vb->x)
+        return 1;
+    else if (va->x < vb->x)
+        return -1;
+    else
+        return 0;
+}
+
+inline int
+v2_compare_y(const void *a, const void *b) {
+    const v2 *va = (v2 *)a;
+    const v2 *vb = (v2 *)b;
+    if (va->y > vb->y)
+        return 1;
+    else if (va->y < vb->y)
+        return -1;
+    else
+        return 0;
+}
 
 inline v2
 operator+(v2 a, v2 b) {
@@ -160,6 +187,16 @@ lnormal(v2 a, v2 b) {
 inline v2
 operator*(M2 m, v2 v) {
     return v2{m.m11 * v.x + m.m12 * v.y, m.m21 * v.x + m.m22 * v.y};
+};
+
+inline M2
+operator*(M2 a, M2 b) {
+    return M2{
+        a.m11 * b.m11 + a.m12 * b.m21,
+        a.m11 * b.m12 + a.m12 * b.m22,
+        a.m21 * b.m11 + a.m22 * b.m21,
+        a.m21 * b.m12 + a.m22 * b.m22
+    };
 };
 
 inline Rectangle
@@ -278,3 +315,16 @@ inline v2
 projection(v2 a, v2 b) {
     return b * dot(a, b) / dot(b, b);
 }
+
+inline v2
+rotate(v2 v, v2 por, float angle) {
+    if (abs(angle) < EPSILON)
+        return v;
+    M2 rot = {cos(angle), -sin(angle), sin(angle), cos(angle)};
+    return rot * v;
+    //v2 result;
+    //result.x = ((v.x - por.x) * cos(angle)) - ((por.y - v.y) * sin(angle)) + por.x;
+    //result.y = por.y - ((por.y - v.y) * cos(angle)) + ((v.x - por.x) * sin(angle));
+    //return result;
+}
+#endif
