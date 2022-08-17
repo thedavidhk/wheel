@@ -1,6 +1,19 @@
 #ifndef WHEEL_H
 #define WHEEL_H
 
+#define int8 char
+#define int16 short
+#define int32 int
+#define int64 long long
+
+#define uint8 unsigned char
+#define uint16 unsigned short
+#define uint32 unsigned int
+#define uint64 unsigned long long
+
+#define f32 float
+#define f64 double
+
 #define FRAME_RATE 60
 #define SIM_RATE 120
 #define WIN_WIDTH 800

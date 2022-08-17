@@ -142,7 +142,8 @@ get_input_type(int type) {
     }
 }
 
-double timeDiff(timespec start, timespec end)
+static double
+timeDiff(timespec start, timespec end)
 {
     long nano;
     if ((end.tv_nsec-start.tv_nsec)<0)
@@ -150,6 +151,28 @@ double timeDiff(timespec start, timespec end)
     else
         nano = end.tv_nsec-start.tv_nsec;
     return (double)nano / 1000000000.0f;
+}
+
+static XImage *
+ximage_create(Display *display, XVisualInfo *visinfo, XShmSegmentInfo* shminfo, Framebuffer *fb, uint32 width, uint32 height) {
+#ifdef SHARED_MEM_SUPORT
+    XImage *image = XShmCreateImage(display, visinfo->visual,
+            visinfo->depth, ZPixmap, 0, shminfo, width, height);
+    shminfo->shmid = shmget(IPC_PRIVATE, image->bytes_per_line *
+            image->height, IPC_CREAT|0777);
+    shminfo->shmaddr = image->data = (char *)shmat(shminfo->shmid, 0, 0);
+    shminfo->readOnly = false;
+    if(!XShmAttach(display, shminfo)) {
+        printf("Could not attach shared memory to X-Server.\n");
+        exit(1);
+    }
+    fb->data = (unsigned int *)image->data;
+#else
+    fb->data = (unsigned int*)malloc(fb->width * fb->height * fb->bytes_per_pixel);
+    XImage *image = XCreateImage(display, visinfo->visual,
+            visinfo->depth, ZPixmap, 0, (char *)fb->data, fb->width, fb->height, fb->bytes_per_pixel * 4, 0);
+#endif
+    return image;
 }
 
 
@@ -206,31 +229,18 @@ int main(int argc, char **argv) {
 
     // Drawing pixels
 
-    Framebuffer buffer = {};
-    buffer.width = WIN_WIDTH;
-    buffer.height = WIN_HEIGHT;
-    buffer.bytes_per_pixel = 4;
+    Framebuffer fb = {};
+    fb.width = WIN_WIDTH;
+    fb.height = WIN_HEIGHT;
+    fb.bytes_per_pixel = 4;
 
 
-#ifdef SHARED_MEM_SUPORT
-    XShmSegmentInfo shminfo;
-    XImage *xWindowBuffer = XShmCreateImage(display, visinfo.visual,
-            visinfo.depth, ZPixmap, 0, &shminfo, WIN_WIDTH, WIN_HEIGHT);
+    XShmSegmentInfo shminfo_a;
+    XImage *ximage_a = ximage_create(display, &visinfo, &shminfo_a, &fb, WIN_WIDTH, WIN_HEIGHT);
+    XShmSegmentInfo shminfo_b;
+    XImage *ximage_b = ximage_create(display, &visinfo, &shminfo_b, &fb, WIN_WIDTH, WIN_HEIGHT);
 
-    shminfo.shmid = shmget(IPC_PRIVATE, xWindowBuffer->bytes_per_line *
-            xWindowBuffer->height, IPC_CREAT|0777);
-    shminfo.shmaddr = xWindowBuffer->data = (char *)shmat(shminfo.shmid, 0, 0);
-    shminfo.readOnly = false;
-    if(!XShmAttach(display, &shminfo)) {
-        printf("Could not attach shared memory to X-Server.\n");
-        exit(1);
-    }
-    buffer.data = (unsigned int *)xWindowBuffer->data;
-#else
-    buffer.data = (unsigned int*)malloc(buffer.width * buffer.height * buffer.bytes_per_pixel);
-    XImage *xWindowBuffer = XCreateImage(display, visinfo.visual,
-            visinfo.depth, ZPixmap, 0, (char *)buffer.data, buffer.width, buffer.height, buffer.bytes_per_pixel * 4, 0);
-#endif
+    fb.data = (uint32 *)ximage_a->data;
 
     GC defaultGC = DefaultGC(display, defaultScreen);
 
@@ -302,12 +312,23 @@ int main(int argc, char **argv) {
             }
         }
 
-        gameUpdateAndRender(d_t_frame, game, buffer);
+        gameUpdateAndRender(d_t_frame, game, fb);
+
+        XImage *read_img = ximage_a;
+
+        if (fb.data == (uint32 *)ximage_a->data) {
+            fb.data = (uint32 *)ximage_b->data;
+            read_img = ximage_a;
+        } else {
+            fb.data = (uint32 *)ximage_a->data;
+            read_img = ximage_b;
+        }
+
 
 #ifdef SHARED_MEM_SUPORT
-        XShmPutImage(display, window, defaultGC, xWindowBuffer, 0, 0, 0, 0, buffer.width, buffer.height, 0);
+        XShmPutImage(display, window, defaultGC, read_img, 0, 0, 0, 0, fb.width,fb.height, 0);
 #else
-        XPutImage(display, window, defaultGC, xWindowBuffer, 0, 0, 0, 0, buffer.width, buffer.height);
+        XPutImage(display, window, defaultGC, read_img, 0, 0, 0, 0, fb.width,fb.height);
 #endif
 
 #ifdef FRAME_RATE
