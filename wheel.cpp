@@ -97,8 +97,18 @@ struct Scene {
     Collision *collisions;
 };
 
+struct Bitmap {
+    uint32 width;
+    uint32 height;
+    union {
+        uint32 *pixels;
+        uint8 *bytes;
+    };
+};
+
 struct AppState {
     Scene *current_scene;
+    Bitmap testimg;
     int32 mouse_x;
     int32 mouse_y;
     uint32 frame_count;
@@ -164,6 +174,44 @@ resolve_collision(Collision col, Transform *t_a, Transform t_b, Movement *mov_a)
 static void
 draw_shape_wireframe(const Camera &camera, Framebuffer fb, Shape s, Transform t, Color color, uint32 thickness);
 
+
+//struct Bitmap {
+//    uint32 size;
+//    union {
+//        uint32 *pixels;
+//        uint8 *bytes;
+//    };
+//};
+
+static Bitmap
+load_bmp_file(const char* filename, AppMemory *mem) {
+    Bitmap f;
+    FILE *ptr;
+
+    ptr = fopen(filename, "rb");
+    if (!ptr) {
+        printf("File %s could not be opened.\n", filename);
+        exit(1);
+    }
+    uint8 header[26];
+    if (!fread(header, 1, 26, ptr)) {
+        printf("File %s could not be read.\n", filename);
+        exit(1);
+    }
+    // TODO: More careful compatibility checking
+    uint32 fsize = *(uint32 *)(header + 2);
+    uint32 offset = *(uint32 *)(header + 10);
+    f.width = *(uint32 *)(header + 18);
+    f.height = *(uint32 *)(header + 22);
+    f.bytes = (uint8 *)get_memory(mem, (fsize - offset));
+    fseek(ptr, offset, SEEK_SET);
+    uint32 nbytes_read = fread(f.bytes, 1, fsize - offset, ptr);
+    assert(nbytes_read == fsize - offset);
+    printf("%d bytes read from file %s.\n", fsize - offset, filename);
+    fclose(ptr);
+    return f;
+};
+
 static uint32
 color_to_pixel(Color c) {
     uint32 pixel = 0;
@@ -199,6 +247,26 @@ color_blend(Color top, Color bottom) {
 static Color
 color_opaque(Color c) {
     return {c.r, c.g, c.b, 1};
+}
+
+static void
+draw_bitmap(Bitmap bmp, Framebuffer fb, uint32 startx, uint32 starty) {
+    for (uint32 y = 0; y < bmp.height; y++) {
+        for (uint32 x = 0; x < bmp.width; x++) {
+            fb.data[startx + x + (starty + y) * fb.width] = bmp.pixels[x + (bmp.height - y - 1) * bmp.width];
+        }
+    }
+}
+
+static void
+draw_bitmap_alpha(Bitmap bmp, Framebuffer fb, uint32 startx, uint32 starty) {
+    for (uint32 y = 0; y < bmp.height; y++) {
+        for (uint32 x = 0; x < bmp.width; x++) {
+            uint32 *dest = fb.data + startx + x + (starty + y) * fb.width;
+            uint32 *source = bmp.pixels + x + (bmp.height - y - 1) * bmp.width;
+            *dest = color_to_pixel(color_blend(pixel_to_color(*source), pixel_to_color(*dest)));
+        }
+    }
 }
 
 static Color
@@ -408,6 +476,7 @@ debug_draw_vector(Framebuffer fb, v2 v, v2 offset, Color color) {
 }
 
 
+// TODO: Optimize for entities with opaque color
 static void
 draw_flat_bottom_triangle(Framebuffer fb, v2 *p, Color color) {
     //uint32 pixel = color_to_pixel(color);
@@ -847,6 +916,9 @@ initialize_scene(AppMemory *mem) {
 
 AppHandle
 initialize_app() {
+
+
+
     // TODO: This is completely arbitrary!
     static constexpr uint32 mem_size = megabytes(64);
 
@@ -860,13 +932,16 @@ initialize_app() {
     //mem->data = (void *)mem;
     mem->free = (void *)(mem + 1);
 
+
     // Initialize memory layout.
     //MemoryLayout *ml = (MemoryLayout *)get_memory(mem, sizeof(AppState));
     AppState *as = (AppState *)get_memory(mem, sizeof(AppState));
     mem->as = as;
 
+
     Scene *scene = initialize_scene(mem);
     as->current_scene = scene;
+    as->testimg = load_bmp_file("test.bmp", mem);
 
     Vertexbuffer *vb = scene->vertexbuffer;
     Indexbuffer *ib = scene->indexbuffer;
@@ -939,6 +1014,13 @@ app_update_and_render(f64 frame_time, AppHandle app, Framebuffer fb) {
     // RENDER
     clear_framebuffer(fb, {0});
     draw_entities(scene, fb);
+
+
+    //DEBUG bitmaps
+
+    draw_bitmap_alpha(as->testimg, fb, 20, 20);
+
+
     //draw_entities_wireframe(scene, fb);
     /*
     uint32 h = scene->hovered_entity;
