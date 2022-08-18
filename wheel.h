@@ -25,7 +25,7 @@
 
 #define assert(b) do { if (!(b)) {printf("Assertion failed: %s in line %d of file %s\n", __STRING(b), __LINE__, __FILE__); exit(1);} } while (0)
 
-typedef void *GameHandle;
+typedef void *AppHandle;
 
 enum InputType {
     IT_NULL,
@@ -97,19 +97,19 @@ struct Framebuffer {
     int width, height, bytes_per_pixel;
 };
 
-GameHandle
-initializeGame();
+AppHandle
+initialize_app();
 
 void
-gameUpdateAndRender(double d_t, GameHandle game, Framebuffer buffer);
+app_update_and_render(double d_t, AppHandle game, Framebuffer buffer);
 
 void
-keyPressCallback(KeyBoardInput key, InputType t, GameHandle game);
+key_callback(KeyBoardInput key, InputType t, AppHandle game);
 
 void
-mouseButtonCallback(MouseButton, InputType t, int x, int y, GameHandle game);
+mouse_button_callback(MouseButton, InputType t, int x, int y, AppHandle game);
 
 void
-mouseMoveCallback(int x, int y, GameHandle game);
+mouse_move_callback(int x, int y, uint32 mask, AppHandle game);
 
 #endif

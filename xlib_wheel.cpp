@@ -154,8 +154,8 @@ timeDiff(timespec start, timespec end)
 }
 
 static XImage *
-ximage_create(Display *display, XVisualInfo *visinfo, XShmSegmentInfo* shminfo, Framebuffer *fb, uint32 width, uint32 height) {
 #ifdef SHARED_MEM_SUPORT
+ximage_create(Display *display, XVisualInfo *visinfo, XShmSegmentInfo* shminfo, Framebuffer *fb, uint32 width, uint32 height) {
     XImage *image = XShmCreateImage(display, visinfo->visual,
             visinfo->depth, ZPixmap, 0, shminfo, width, height);
     shminfo->shmid = shmget(IPC_PRIVATE, image->bytes_per_line *
@@ -167,13 +167,16 @@ ximage_create(Display *display, XVisualInfo *visinfo, XShmSegmentInfo* shminfo, 
         exit(1);
     }
     fb->data = (unsigned int *)image->data;
+    return image;
+}
 #else
+ximage_create(Display *display, XVisualInfo *visinfo, Framebuffer *fb, uint32 width, uint32 height) {
     fb->data = (unsigned int*)malloc(fb->width * fb->height * fb->bytes_per_pixel);
     XImage *image = XCreateImage(display, visinfo->visual,
             visinfo->depth, ZPixmap, 0, (char *)fb->data, fb->width, fb->height, fb->bytes_per_pixel * 4, 0);
-#endif
     return image;
 }
+#endif
 
 
 int main(int argc, char **argv) {
@@ -235,10 +238,15 @@ int main(int argc, char **argv) {
     fb.bytes_per_pixel = 4;
 
 
+#ifdef SHARED_MEM_SUPORT
     XShmSegmentInfo shminfo_a;
     XImage *ximage_a = ximage_create(display, &visinfo, &shminfo_a, &fb, WIN_WIDTH, WIN_HEIGHT);
     XShmSegmentInfo shminfo_b;
     XImage *ximage_b = ximage_create(display, &visinfo, &shminfo_b, &fb, WIN_WIDTH, WIN_HEIGHT);
+#else
+    XImage *ximage_a = ximage_create(display, &visinfo, &fb, WIN_WIDTH, WIN_HEIGHT);
+    XImage *ximage_b = ximage_create(display, &visinfo, &fb, WIN_WIDTH, WIN_HEIGHT);
+#endif
 
     fb.data = (uint32 *)ximage_a->data;
 
@@ -251,7 +259,7 @@ int main(int argc, char **argv) {
         printf("Couldn't register WM_DELETE_WINDOW property.\n");
     }
 
-    GameHandle game = initializeGame();
+    AppHandle app = initialize_app();
 
     int windowOpen = 1;
     double d_t_work, d_t_frame = 0;
@@ -282,7 +290,7 @@ int main(int argc, char **argv) {
                 case KeyPress:
                     key = get_key(ev.xkey.keycode, display, ev.xkey.state);
                     t = get_input_type(ev.type);
-                    keyPressCallback(key, t, game);
+                    key_callback(key, t, app);
                     break;
                 case KeyRelease:
                     if (XEventsQueued(display, QueuedAfterReading)) {
@@ -295,24 +303,24 @@ int main(int argc, char **argv) {
                     if (!is_repeat) {
                         key = get_key(ev.xkey.keycode, display, ev.xkey.state);
                         t = get_input_type(ev.type);
-                        keyPressCallback(key, t, game);
+                        key_callback(key, t, app);
                     }
                     break;
                 case MotionNotify:
-                    mouseMoveCallback(ev.xmotion.x, ev.xmotion.y, game);
+                    mouse_move_callback(ev.xmotion.x, ev.xmotion.y, ev.xmotion.state, app);
                     break;
                 case ButtonPress:
                 case ButtonRelease:
                     t = get_input_type(ev.type);
                     btn = get_mouse_button(ev.xbutton.button);
-                    mouseButtonCallback(btn, t, ev.xbutton.x, ev.xbutton.y, game);
+                    mouse_button_callback(btn, t, ev.xbutton.x, ev.xbutton.y, app);
                 default:
                     XFlush(display);
                     break;
             }
         }
 
-        gameUpdateAndRender(d_t_frame, game, fb);
+        app_update_and_render(d_t_frame, app, fb);
 
         XImage *read_img = ximage_a;
 
@@ -323,7 +331,6 @@ int main(int argc, char **argv) {
             fb.data = (uint32 *)ximage_a->data;
             read_img = ximage_b;
         }
-
 
 #ifdef SHARED_MEM_SUPORT
         XShmPutImage(display, window, defaultGC, read_img, 0, 0, 0, 0, fb.width,fb.height, 0);
