@@ -1,29 +1,12 @@
 #ifndef WHEEL_H
 #define WHEEL_H
 
-#define int8 char
-#define int16 short
-#define int32 int
-#define int64 long long
-
-#define uint8 unsigned char
-#define uint16 unsigned short
-#define uint32 unsigned int
-#define uint64 unsigned long long
-
-#define f32 float
-#define f64 double
+#include "types_wheel.h"
 
 #define FRAME_RATE 60
 #define SIM_RATE 120
 #define WIN_WIDTH 800
 #define WIN_HEIGHT 600
-
-#define kilobytes(value) ((value) * 1024)
-#define megabytes(value) (kilobytes(value) * 1024)
-#define gigabytes(value) (megabytes(value) * 1024)
-
-#define assert(b) do { if (!(b)) {printf("Assertion failed: %s in line %d of file %s\n", __STRING(b), __LINE__, __FILE__); exit(1);} } while (0)
 
 typedef void *AppHandle;
 

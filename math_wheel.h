@@ -3,6 +3,8 @@
 
 #include <math.h>
 
+#include "types_wheel.h"
+
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) < (b) ? (b) : (a))
 #define abs(a) ((a) >= 0 ? (a) : (-(a)))
@@ -18,6 +20,26 @@ union v2 {
         float x, y;
     };
     float elements[2];
+};
+
+union v3 {
+    struct {
+        float x, y, z;
+    };
+    struct {
+        float r, g, b;
+    };
+    float elements[3];
+};
+
+union v4 {
+    struct {
+        float x, y, z, w;
+    };
+    struct {
+        float r, g, b, a;
+    };
+    float elements[4];
 };
 
 struct Rectangle {
@@ -67,6 +89,11 @@ struct Polygon {
 struct Triangle {
     v2 a, b, c;
 };
+
+static real32
+det(v2 a, v2 b, v2 c) {
+    return (a.x - c.x) * (c.y - b.y) - (b.x - c.x) * (c.y - a.y);
+}
 
 inline int
 v2_compare_x(const void *a, const void *b) {
@@ -256,7 +283,7 @@ minkowski_sum(Rectangle a, Rectangle b) {
 }
 
 // Check if polygon defined clockwise and convex
-bool
+inline bool
 validatePolygon(Polygon p) {
     if (p.vertex_count < 3)
         return false;
@@ -272,7 +299,7 @@ validatePolygon(Polygon p) {
     return result;
 }
 
-bool
+inline bool
 isInsidePolygon(v2 point, Polygon poly) {
     v2 a = poly.vertices[0];
     bool result = true;
@@ -326,5 +353,19 @@ rotate(v2 v, v2 por, float angle) {
     //result.x = ((v.x - por.x) * cos(angle)) - ((por.y - v.y) * sin(angle)) + por.x;
     //result.y = por.y - ((por.y - v.y) * cos(angle)) + ((v.x - por.x) * sin(angle));
     //return result;
+}
+
+inline bool
+is_in_triangle(v2 p, v2 a, v2 b, v2 c) {
+    // NOTE: This works as long as triangles are defined counterclockwise. If
+    // they are not necessarily defined clockwise, we need to check if all
+    // determinants have the same sign which can be positive or negative.
+    if (det(p, b, c) > 0)
+        return false;
+    else if (det(p, c, a) > 0)
+        return false;
+    else if (det(p, a, b) > 0)
+        return false;
+    return true;
 }
 #endif
