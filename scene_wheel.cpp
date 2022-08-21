@@ -13,18 +13,43 @@ handle_collisions(Scene *scene, real64 d_t) {
         for (uint32 j = 1; j < scene->entity_count; j++) {
             if (i == j || (scene->entities[j] & MASK) != MASK)
                 continue;
+#if 1
+            scene->predicted_transforms[i] = scene->transforms[i];
+            scene->predicted_transforms[i].pos += scene->movements[i].v;
+            scene->collisions[i] = check_collision(scene->meshes[i], scene->meshes[j],
+                    scene->transforms[i], scene->transforms[j], scene->movements[i],
+                    scene->movements[j], d_t);
+            scene->predicted_collisions[i] = check_collision(scene->meshes[i], scene->meshes[j],
+                    scene->transforms[i], scene->transforms[j], scene->movements[i],
+                    scene->movements[j], 1);
+#else
             Collision col = check_collision(scene->meshes[i], scene->meshes[j],
                     scene->transforms[i], scene->transforms[j], scene->movements[i],
-                    scene->movements[j], d_t); if (col.collided) {
-                /*
+                    scene->movements[j], d_t);
+#endif
+            if (scene->predicted_collisions[i].collided) {
+                resolve_collision(scene->predicted_collisions[i], scene->meshes[i], &scene->predicted_transforms[i], scene->transforms[j], &scene->predicted_movements[i], scene->masses[i]);
+                scene->predicted_transforms[i].pos += scene->predicted_movements[i].v;
+            }
+            else {
+                scene->predicted_collisions[i] = {};
+            }
+            if (scene->collisions[i].collided) {
+#if 1
+                resolve_collision(scene->collisions[i], scene->meshes[i], &scene->transforms[i], scene->transforms[j], &scene->movements[i], scene->masses[i]);
+#else
                 if (scene->entities[j] == (scene->entities[j] | CM_Velocity | CM_Mass)) {
-                    resolve_collision(col, &scene->transforms[i], &scene->transforms[j], &scene->movements[i],
+                    resolve_collision(col, scene->meshes[i], scene->meshes[j], &scene->transforms[i], &scene->transforms[j], &scene->movements[i],
                             &scene->movements[j], scene->masses[i], scene->masses[j]);
+                    scene->ghosts[i] = {};
                 } else {
                     resolve_collision(col, scene->meshes[i], &scene->transforms[i], scene->transforms[j], &scene->movements[i],
-                            scene->masses[i], scene->masses[j]);
+                            scene->masses[i]);
                 }
-                */
+#endif
+            }
+            else {
+                scene->collisions[i] = {};
             }
         }
     }
@@ -42,6 +67,8 @@ draw_entities(Scene *scene, Framebuffer fb) {
             v2 pos_screen = world_to_screen_space(transform(center_of_mass(scene->meshes[i]), scene->transforms[i]), scene->camera);
             v2 origin_screen = world_to_screen_space({}, scene->camera);
             debug_draw_vector(fb, vel_screen - origin_screen, pos_screen, color_opaque(scene->colors[i]));
+            debug_draw_vector(fb, world_to_screen_space(scene->predicted_collisions[i].mtv, scene->camera) - origin_screen, world_to_screen_space(scene->predicted_collisions[i].poi, scene->camera), {1, 0, 0, 1});
+            //draw_mesh_wireframe(scene->camera, fb, scene->meshes[i], scene->predicted_transforms[i], scene->colors[i], 1);
         }
     }
 }
@@ -77,9 +104,18 @@ update_velocities(Scene *scene, real64 d_t) {
         if ((scene->entities[i] & MASK) == MASK) {
             scene->movements[i].v += scene->movements[i].a * d_t;
             scene->movements[i].a = {};
+            //if (scene->entities[i] & CM_Mass) {
+            //    scene->movements[i].v.y += 3 * d_t; // GRAVITY
+            //}
             if (scene->entities[i] & CM_Friction) {
                 scene->movements[i].v -= scene->movements[i].v * scene->frictions[i] * d_t;
                 scene->movements[i].rot_v -= scene->movements[i].rot_v * scene->frictions[i] * d_t;
+            }
+            scene->predicted_movements[i].v += scene->predicted_movements[i].a * d_t;
+            scene->predicted_movements[i].a = {};
+            if (scene->entities[i] & CM_Friction) {
+                scene->predicted_movements[i].v -= scene->predicted_movements[i].v * scene->frictions[i] * d_t;
+                scene->predicted_movements[i].rot_v -= scene->predicted_movements[i].rot_v * scene->frictions[i] * d_t;
             }
         }
     }
@@ -91,10 +127,13 @@ update_transforms(Scene *scene, real64 d_t) {
     for (uint32 i = 1; i < scene->entity_count; i++) {
         if ((scene->entities[i] & MASK) == MASK) {
             scene->transforms[i].pos += scene->movements[i].v * d_t;
-            scene->transforms[i].rot += scene->movements[i].rot_v * d_t;
+            scene->transforms[i].pos += scene->movements[i].v * d_t;
+            scene->predicted_transforms[i].rot += scene->predicted_movements[i].rot_v * d_t;
+            scene->predicted_transforms[i].rot += scene->predicted_movements[i].rot_v * d_t;
         }
     }
 }
+
 Scene *
 initialize_scene(AppMemory *mem) {
     Scene *scene = (Scene *)get_memory(mem, sizeof(Scene));
@@ -103,7 +142,7 @@ initialize_scene(AppMemory *mem) {
 
     // Initialize vertex and index buffer.
     static constexpr uint32 MAX_V = 64;
-    scene->vertexbuffer->data = (v2 *)get_memory(mem, MAX_V * sizeof(v2));
+    scene->vertexbuffer->data = (Vertex *)get_memory(mem, MAX_V * sizeof(Vertex));
     scene->vertexbuffer->max_count = MAX_V;
     scene->vertexbuffer->count = 0;
     static constexpr uint32 MAX_I = 64;
@@ -115,13 +154,16 @@ initialize_scene(AppMemory *mem) {
     scene->max_entity_count = 64;
     scene->entities = (uint32 *)get_memory(mem, scene->max_entity_count * sizeof(uint32));
     scene->transforms = (Transform *)get_memory(mem, scene->max_entity_count * sizeof(Transform));
+    scene->predicted_transforms = (Transform *)get_memory(mem, scene->max_entity_count * sizeof(Transform));
     scene->meshes = (Mesh *)get_memory(mem, scene->max_entity_count * sizeof(Mesh));
-    scene->colors = (Color *)get_memory(mem, scene->max_entity_count * sizeof(Color));
+    scene->colors = (v4 *)get_memory(mem, scene->max_entity_count * sizeof(v4));
     scene->movements = (Movement *)get_memory(mem, scene->max_entity_count * sizeof(Movement));
+    scene->predicted_movements = (Movement *)get_memory(mem, scene->max_entity_count * sizeof(Movement));
     scene->forces = (real32 *)get_memory(mem, scene->max_entity_count * sizeof(real32));
     scene->masses = (Mass *)get_memory(mem, scene->max_entity_count * sizeof(Mass));
     scene->frictions = (real32 *)get_memory(mem, scene->max_entity_count * sizeof(real32));
     scene->collisions = (Collision *)get_memory(mem, scene->max_entity_count * sizeof(Collision));
+    scene->predicted_collisions = (Collision *)get_memory(mem, scene->max_entity_count * sizeof(Collision));
 
     // Initialize camera.
     scene->camera.pos = {0.0f, 0.0f};
@@ -130,6 +172,9 @@ initialize_scene(AppMemory *mem) {
     scene->camera.height = WIN_HEIGHT;
 
     add_entity(scene, 0); // NULL-Entity
+
+    scene->paused = true;
+
     return scene;
 }
 

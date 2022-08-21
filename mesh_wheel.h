@@ -2,14 +2,15 @@
 
 #include "math_wheel.h"
 
-struct VertexAttribute {
-    v2 pos;
-    v4 col;
+struct Vertex {
+    v2 coord;
+    v4 color;
+    //v2 tex_coord;
 };
 
-#if 0
+#if 1
 struct Vertexbuffer {
-    v2 *data;
+    Vertex *data;
     uint32 count, max_count;
 };
 
@@ -27,7 +28,7 @@ struct Indexbuffer {
 };
 
 struct Mesh {
-    v2 *v_buffer;
+    Vertex *v_buffer;
     uint32 *i;
     v2 por;
     uint32 index_count;
@@ -40,11 +41,10 @@ struct Transform {
 };
 
 Mesh
-create_polygon(Vertexbuffer *vb, Indexbuffer *ib, const v2 *verts, uint32
-        count_v, const uint32 *indices, uint32 count_i);
+create_polygon(Vertexbuffer *vb, Indexbuffer *ib, const Vertex *verts, uint32 count_v, const uint32 *indices, uint32 count_i);
 
 Mesh
-create_rectangle(Vertexbuffer *vb, Indexbuffer *ib, v2 min, v2 max);
+create_rectangle(Vertexbuffer *vb, Indexbuffer *ib, v2 min, v2 max, v4 color);
 
 v2
 center_of_mass(Mesh mesh);

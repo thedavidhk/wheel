@@ -57,11 +57,16 @@ initialize_app() {
 
     // Initialize player.
     constexpr uint32 count_v = 3;
-    v2 data[count_v] = {
-        {-0.5, -0.5},
-        { 0.5, -0.3},
-        {-0.5,  0.5}
+    Vertex data[count_v] = {
+        {{ 0.0, -0.5}, {1, 0, 0, 1}},
+        {{ 0.5,  0.5}, {0, 1, 0, 1}},
+        {{-0.5,  0.5}, {0, 0, 1, 1}}
     };
+    //Vertex data[count_v] = {
+    //    {-0.5, -0.5},
+    //    { 0.5, -0.3},
+    //    {-0.5,  0.5}
+    //};
     constexpr uint32 count_i = 3;
     uint32 indices[count_i] = {
         0, 1, 2
@@ -71,31 +76,34 @@ initialize_app() {
     int32 scenery_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Rotation;
     uint32 wall = add_entity(scene, scenery_mask);
     scene->transforms[wall].pos = {1, 1};
-    scene->meshes[wall] = create_polygon(vb, ib, data, count_v, indices, count_i);
     scene->colors[wall] = {0.3, 0.7, 1, 0.8};
+    scene->meshes[wall] = create_polygon(vb, ib, data, count_v, indices, count_i);
 
     uint32 floor = add_entity(scene, scenery_mask);
     scene->transforms[floor].pos = {0, 6};
     scene->transforms[floor].rot = 0.2;
-    scene->meshes[floor] = create_rectangle(vb, ib, {-20, -0.5}, {20, 0.5});
     scene->colors[floor] = {1, 1, 1, 0.8};
+    scene->meshes[floor] = create_rectangle(vb, ib, {-20, -0.5}, {20, 0.5}, scene->colors[floor]);
 
     int32 moveable_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Velocity | CM_Mass | CM_Friction;
     uint32 pebble = add_entity(scene, moveable_mask);
     scene->transforms[pebble].pos = {6, -1};
-    scene->meshes[pebble] = create_polygon(vb, ib, data, count_v, indices, count_i);
     scene->colors[pebble] = {0.3, 0.7, 0.2, 0.8};
+    scene->meshes[pebble] = create_polygon(vb, ib, data, count_v, indices, count_i);
     scene->movements[pebble].v = {-10, 0};
     scene->masses[pebble].value = 1;
     scene->frictions[pebble] = 1;
 
     int32 player_mask = CM_Pos | CM_Mesh | CM_Color | CM_Velocity | CM_Force | CM_Mass | CM_Friction | CM_Collision | CM_Rotation;
     scene->player_index = add_entity(scene, player_mask);
-    scene->meshes[scene->player_index] = create_polygon(vb, ib, data, count_v, indices, count_i);
+    scene->transforms[scene->player_index].rot = 0.3;
     scene->colors[scene->player_index] = {1, 0.7, 0.3, 0.8};
+    scene->meshes[scene->player_index] = create_polygon(vb, ib, data, count_v, indices, count_i);
     scene->forces[scene->player_index] = 2;
     scene->masses[scene->player_index].value = 1;
     scene->frictions[scene->player_index] = 1;
+
+    scene_reset_predictions(scene);
 
     return (AppHandle)mem;
 }
@@ -111,12 +119,21 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
     while (time_left > 0.0) {
         real64 d_t = min(frame_time, 1.0d / SIM_RATE);
         uint32 p = scene->player_index;
+#if 0
+        update_velocities(scene, d_t);
+        handle_collisions(scene, d_t);
         if (!scene->paused) {
+            update_transforms(scene, d_t);
+        }
+#else
+        if (!scene->paused) {
+            //scene_reset_predictions(scene);
             accelerate(scene->player_movement, 1.0f * scene->forces[p], scene->masses[p].value, &scene->movements[p], d_t);
             update_velocities(scene, d_t);
             handle_collisions(scene, d_t);
             update_transforms(scene, d_t);
         }
+#endif
         time_left -= d_t;
     }
 
@@ -221,10 +238,14 @@ mouse_move_callback(int32 x, int32 y, uint32 mask, AppHandle app) {
     v2 diff_world = screen_to_world_space({(real32)x, (real32)y}, scene->camera) - screen_to_world_space({(real32)as->mouse_x, (real32)as->mouse_y}, scene->camera);
     if (scene->selected_entity) {
     // TODO: define masks ourselves
-        if (mask & 1)
+        if (mask & 1) {
             scene->transforms[scene->selected_entity].pos += diff_world;
-        else if (scene->entities[scene->selected_entity] & CM_Velocity)
+        }
+        else if (scene->entities[scene->selected_entity] & CM_Velocity) {
             scene->movements[scene->selected_entity].v += diff_world;
+            scene->predicted_transforms[scene->selected_entity] = scene->transforms[scene->selected_entity];
+            scene->predicted_transforms[scene->selected_entity].pos += scene->movements[scene->selected_entity].v;
+        }
     }
     else if (mask & (1<<8)) {
         scene->camera.pos -= diff_world;

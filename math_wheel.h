@@ -124,6 +124,11 @@ operator+(v2 a, v2 b) {
     return {a.x + b.x, a.y + b.y};
 }
 
+inline v4
+operator+(v4 a, v4 b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
+}
+
 inline v2&
 operator+=(v2& a, const v2& b) {
     a = a + b;
@@ -138,6 +143,11 @@ operator-(v2 a) {
 inline v2
 operator-(v2 a, v2 b) {
     return {a.x - b.x, a.y - b.y};
+}
+
+inline v4
+operator-(v4 a, v4 b) {
+    return {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
 }
 
 inline v2&
@@ -156,6 +166,16 @@ operator*(float b, v2 a) {
     return {a.x * b, a.y * b};
 }
 
+inline v4
+operator*(v4 a, float b) {
+    return {a.x * b, a.y * b, a.z * b, a.w * b};
+}
+
+inline v4
+operator*(float b, v4 a) {
+    return a * b;
+}
+
 inline v2&
 operator*=(v2& a, float b) {
     a = a * b;
@@ -165,6 +185,11 @@ operator*=(v2& a, float b) {
 inline v2
 operator/(v2 a, float b) {
     return {a.x / b, a.y / b};
+}
+
+inline v4
+operator/(v4 a, float b) {
+    return {a.x / b, a.y / b, a.z / b, a.w / b};
 }
 
 inline v2&
@@ -181,6 +206,11 @@ operator/(float b, v2 a) {
 inline float
 dot(v2 a, v2 b) {
     return a.x * b.x + a.y * b.y;
+}
+
+inline float
+cross(v2 a, v2 b) {
+    return a.x * b.y - a.y - b.x;
 }
 
 inline float

@@ -1,5 +1,7 @@
 #ifndef SCENE_WHEEL_H
 
+#include <string.h>
+
 #include "physics_wheel.h"
 #include "render_wheel.h"
 #include "memory_wheel.h"
@@ -32,13 +34,16 @@ struct Scene {
     uint32 max_entity_count;
     uint32 *entities;
     Transform *transforms;
+    Transform *predicted_transforms;
     Movement *movements;
+    Movement *predicted_movements;
     Mesh *meshes;
-    Color *colors;
+    v4 *colors;
     real32 *forces;
     Mass *masses;
     real32 *frictions;
     Collision *collisions;
+    Collision *predicted_collisions;
 };
 
 void
@@ -64,6 +69,13 @@ get_entity_from_screen_pos(int32 x, int32 y, Scene *scene);
 
 void
 highlight_entity(Scene *scene, Framebuffer fb, uint32 id);
+
+inline void
+scene_reset_predictions(Scene *scene) {
+    memcpy(scene->predicted_transforms, scene->transforms, scene->entity_count * sizeof(*scene->transforms));
+    memcpy(scene->predicted_movements, scene->movements, scene->entity_count * sizeof(*scene->movements));
+    memcpy(scene->predicted_collisions, scene->collisions, scene->entity_count * sizeof(*scene->collisions));
+}
 
 #define SCENE_WHEEL_H
 #endif

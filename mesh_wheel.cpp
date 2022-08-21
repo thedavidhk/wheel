@@ -2,7 +2,7 @@
 #include "mesh_wheel.h"
 
 Mesh
-create_polygon(Vertexbuffer *vb, Indexbuffer *ib, const v2 *verts, uint32 count_v, const uint32 *indices, uint32 count_i) {
+create_polygon(Vertexbuffer *vb, Indexbuffer *ib, const Vertex *verts, uint32 count_v, const uint32 *indices, uint32 count_i) {
     Mesh mesh = {};
     mesh.v_buffer = vb->data;
     mesh.index_count = count_i;
@@ -18,8 +18,13 @@ create_polygon(Vertexbuffer *vb, Indexbuffer *ib, const v2 *verts, uint32 count_
 };
 
 Mesh
-create_rectangle(Vertexbuffer *vb, Indexbuffer *ib, v2 min, v2 max) {
-    v2 verts[4] = {min, v2{max.x, min.y}, max, v2{min.x, max.y}};
+create_rectangle(Vertexbuffer *vb, Indexbuffer *ib, v2 min, v2 max, v4 color) {
+    Vertex verts[4] = {
+        Vertex{min, color},
+        Vertex{v2{max.x, min.y}, color},
+        Vertex{max, color},
+        Vertex{v2{min.x, max.y}, color}
+    };
     uint32 indices[6] = {0, 1, 2, 0, 2, 3};
     return create_polygon(vb, ib, verts, 4, indices, 6);
 };
@@ -29,7 +34,7 @@ center_of_mass(Mesh mesh) {
     v2 sum = {};
     uint32 i;
     for (i = 0; i < mesh.index_count; i++) {
-        sum += mesh.v_buffer[mesh.i[i]];
+        sum += mesh.v_buffer[mesh.i[i]].coord;
     }
     return sum / (real32)i;
 }
@@ -46,9 +51,9 @@ is_in_mesh(v2 p, Mesh mesh, Transform t) {
     bool result = false;
     for (uint32 i = 0; i < mesh.index_count - 2; i += 3) {
         result = is_in_triangle(p,
-                transform(mesh.v_buffer[mesh.i[i]], t),
-                transform(mesh.v_buffer[mesh.i[i + 1]], t),
-                transform(mesh.v_buffer[mesh.i[i + 2]], t));
+                transform(mesh.v_buffer[mesh.i[i]].coord, t),
+                transform(mesh.v_buffer[mesh.i[i + 1]].coord, t),
+                transform(mesh.v_buffer[mesh.i[i + 2]].coord, t));
         if (result)
             return result;
     }
