@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include "render_wheel.h"
 
+// TODO: Font rendering!
+// - API oriented design!
+// - What about scaling?
+
 static v4
 complement(v4 c);
 
@@ -41,6 +45,49 @@ fragment_shader(v4 fg_color, v4 bg_color);
 static int
 vertex_compare_pos_y(const void *a, const void *b);
 
+void
+render_text(Framebuffer fb, const char* str, Font f, Transform t, v4 color) {
+    // TODO: Apply transform
+    uint32 x_offset = 0;
+    while (*str) {
+        uint32 start_x = ((*str - f.ascii_offset) * f.cwidth) % f.bitmap.width;
+        uint32 start_y = f.cheight * (((*str - f.ascii_offset) * f.cwidth) / f.bitmap.width);
+        for (uint32 y = 0; y < f.cheight; y++) {
+            for (uint32 x = 0; x < f.cwidth; x++) {
+                v4 fg_color = pixel_to_color(f.bitmap.pixels[start_x + x + (f.bitmap.height - (start_y + y + 1)) * f.bitmap.width]);
+                uint32 *bg = fb.data + x + x_offset + y * fb.width;
+                v4 bg_color = pixel_to_color(*bg);
+                *bg = color_to_pixel(fragment_shader(bg_color, fg_color));
+            }
+        }
+        x_offset += f.cwidth;
+        str ++;
+    }
+}
+
+void
+draw_string_to_texture(Texture *texture, const char *str, Font f, v4 color) {
+    uint32 x_offset = 0;
+    uint32 line_offset = 0;
+    while (*str) {
+        if (*str == '\n') {
+            line_offset++;
+            x_offset = 0;
+        }
+        else {
+            uint32 start_x = ((*str - f.ascii_offset) * f.cwidth) % f.bitmap.width;
+            uint32 start_y = f.cheight * (((*str - f.ascii_offset) * f.cwidth) / f.bitmap.width);
+            for (uint32 y = 0; y < f.cheight; y++) {
+                for (uint32 x = 0; x < f.cwidth; x++) {
+                    texture->pixels[x + x_offset + (y + line_offset * f.cheight) * texture->width] = f.bitmap.pixels[start_x + x + (start_y + y) * f.bitmap.width];
+                }
+            }
+            x_offset += f.cwidth;
+        }
+        str ++;
+    }
+}
+
 v2
 world_to_screen_space(v2 coord, const Camera &camera) {
     v2 offset = {camera.width / 2.0f, camera.height / 2.0f};
@@ -54,20 +101,20 @@ screen_to_world_space(v2 coord, const Camera &camera) {
 }
 
 void
-draw_bitmap(Bitmap bmp, Framebuffer fb, uint32 startx, uint32 starty) {
-    for (uint32 y = 0; y < bmp.height; y++) {
-        for (uint32 x = 0; x < bmp.width; x++) {
-            fb.data[startx + x + (starty + y) * fb.width] = bmp.pixels[x + (bmp.height - y - 1) * bmp.width];
+draw_texture(Texture texture, Framebuffer fb, uint32 startx, uint32 starty) {
+    for (uint32 y = 0; y < texture.height; y++) {
+        for (uint32 x = 0; x < texture.width; x++) {
+            fb.data[startx + x + (starty + y) * fb.width] = texture.pixels[x + (texture.height - y - 1) * texture.width];
         }
     }
 }
 
 void
-draw_bitmap_alpha(Bitmap bmp, Framebuffer fb, uint32 startx, uint32 starty) {
-    for (uint32 y = 0; y < bmp.height; y++) {
-        for (uint32 x = 0; x < bmp.width; x++) {
+draw_texture_alpha(Texture texture, Framebuffer fb, uint32 startx, uint32 starty) {
+    for (uint32 y = 0; y < texture.height; y++) {
+        for (uint32 x = 0; x < texture.width; x++) {
             uint32 *dest = fb.data + startx + x + (starty + y) * fb.width;
-            uint32 *source = bmp.pixels + x + (bmp.height - y - 1) * bmp.width;
+            uint32 *source = texture.pixels + x + y * texture.width;
             *dest = color_to_pixel(color_blend(pixel_to_color(*source), pixel_to_color(*dest)));
         }
     }
@@ -439,8 +486,6 @@ vertex_shader(Vertex v, Camera cam, Transform t, v2 *screen_pos, v4 *color) {
 
 static v4
 fragment_shader(v4 bg_color, v4 fg_color) {
-    // TODO: This is probably not really a fragment shader. According to OpenGL
-    // Wiki, fragment shaders take already interpolated values as inputs.
     return color_blend(fg_color, bg_color);
 }
 

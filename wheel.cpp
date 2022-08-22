@@ -5,16 +5,19 @@
 
 struct AppState {
     Scene *current_scene;
-    Bitmap testimg;
+    Texture testimg;
+    Texture string_texture;
+    Font test_font;
+    real64 app_time;
     int32 mouse_x;
     int32 mouse_y;
     uint32 frame_count;
-    real64 app_time;
+    uint32 fps;
 };
 
-static Bitmap
+static Texture
 load_bmp_file(const char* filename, AppMemory *mem) {
-    Bitmap f;
+    Texture f;
     FILE *ptr;
     ptr = fopen(filename, "rb");
     if (!ptr) {
@@ -33,12 +36,51 @@ load_bmp_file(const char* filename, AppMemory *mem) {
     f.height = *(uint32 *)(header + 22);
     f.bytes = (uint8 *)get_memory(mem, (fsize - offset));
     fseek(ptr, offset, SEEK_SET);
-    uint32 nbytes_read = fread(f.bytes, 1, fsize - offset, ptr);
-    assert(nbytes_read == fsize - offset);
-    printf("%d bytes read from file %s.\n", fsize - offset, filename);
+    for (uint32 y = f.height; y > 0; y--) {
+        fread(f.pixels + y * f.width - 1, 4, f.width, ptr);
+    }
     fclose(ptr);
     return f;
 };
+
+static Font
+load_bitmap_font(const char* filename, AppMemory *mem, uint32 cwidth, uint32 cheight, uint32 ascii_offset) {
+    Font font = {};
+
+    font.bitmap = load_bmp_file(filename, mem);
+    font.cwidth = cwidth;
+    font.cheight = cheight;
+    font.ascii_offset = ascii_offset;
+
+    return font;
+}
+
+static Texture
+create_string_texture(const char* str, AppMemory *mem, Font f, v4 color) {
+    uint32 width = 0;
+    uint32 max_width = 0;
+    uint32 height = 1;
+    const char *str_orig = str;
+    while (*str) {
+        if (*str == '\n') {
+            width = 0;
+            height++;
+        }
+        else {
+            width++;
+            max_width = max(width, max_width);
+        }
+        str++;
+    }
+    width *= f.cwidth;
+    height *= f.cheight;
+    Texture texture = {};
+    texture.pixels = (uint32 *)get_memory(mem, sizeof(uint32) * width * height);
+    texture.width = width;
+    texture.height = height;
+    draw_string_to_texture(&texture, str_orig, f, color);
+    return texture;
+}
 
 
 AppHandle
@@ -50,7 +92,14 @@ initialize_app() {
     AppState *as = (AppState *)get_memory(mem, sizeof(AppState));
     Scene *scene = initialize_scene(mem);
     as->current_scene = scene;
+
+    // DEBUG
     as->testimg = load_bmp_file("test.bmp", mem);
+    as->test_font = load_bitmap_font("source_sans_pro.bmp", mem, 38, 64, 32);
+    const char *string = "Hi,\nThis is David.";
+    as->string_texture = create_string_texture(string, mem, as->test_font, {1, 1, 1, 1});
+    //
+
 
     Vertexbuffer *vb = scene->vertexbuffer;
     Indexbuffer *ib = scene->indexbuffer;
@@ -142,9 +191,11 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
     draw_entities(scene, fb);
 
 
+
     //DEBUG bitmaps
 
-    draw_bitmap_alpha(as->testimg, fb, 20, 20);
+    draw_texture_alpha(as->testimg, fb, 20, 20);
+    draw_texture_alpha(as->string_texture, fb, 200, 200);
 
 
     //draw_entities_wireframe(scene, fb);
@@ -159,12 +210,16 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
 
     as->app_time += frame_time;
     as->frame_count++;
+
     if (as->app_time > 1.0f) {
-        uint32 fps = round((as->frame_count / as->app_time));
-        printf("FPS: %d\n", fps);
+        as->fps = round((as->frame_count / as->app_time));
         as->frame_count = 0;
         as->app_time = 0;
     }
+
+    char str[64];
+    sprintf(str, "FPS: %2d", as->fps);
+    render_text(fb, str, as->test_font, {v2{400, 0}, 0.5, 0}, {1, 1, 1, 1});
     /*
     if (frame_time > 1.0f / ((double)FRAME_RATE) + 0.006f) {
         printf("Frame took too long: %6.4fs\n", frame_time);

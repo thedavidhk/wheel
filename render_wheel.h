@@ -10,13 +10,20 @@ struct Camera {
     uint32 width, height;
 };
 
-struct Bitmap {
-    uint32 width;
-    uint32 height;
+struct Texture {
     union {
         uint32 *pixels;
         uint8 *bytes;
     };
+    uint32 width;
+    uint32 height;
+};
+
+struct Font {
+    Texture bitmap;
+    uint32 cwidth;
+    uint32 cheight;
+    uint32 ascii_offset;
 };
 
 void
@@ -35,13 +42,19 @@ void
 draw_mesh_wireframe(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, v4 color, uint32 thickness);
 
 void
-draw_bitmap(Bitmap bmp, Framebuffer fb, uint32 startx, uint32 starty);
+draw_texture(Texture bmp, Framebuffer fb, uint32 startx, uint32 starty);
 
 void
-draw_bitmap_alpha(Bitmap bmp, Framebuffer fb, uint32 startx, uint32 starty);
+draw_texture_alpha(Texture bmp, Framebuffer fb, uint32 startx, uint32 starty);
 
 void
 debug_draw_vector(Framebuffer fb, v2 v, v2 offset, v4 color);
+
+void
+render_text(Framebuffer fb, const char *str, Font f, Transform t, v4 color);
+
+void
+draw_string_to_texture(Texture *texture, const char *str, Font f, v4 color);
 
 uint32
 color_to_pixel(v4 c);
