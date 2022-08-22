@@ -1,10 +1,6 @@
 #include <stdio.h>
 #include "render_wheel.h"
 
-// TODO: Font rendering!
-// - API oriented design!
-// - What about scaling?
-
 static v4
 complement(v4 c);
 
@@ -27,43 +23,19 @@ static void
 draw_line(Framebuffer fb, v2 a, v2 b, v4 color, uint32 thickness);
 
 static void
-draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color);
+draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture);
 
 static void
-draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color);
+draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture);
 
 static void
-vertex_shader(Vertex v, Camera camera, Transform transform, v2 *screen_pos, v4 *color);
-
-// TODO: move to math (?)
-static v4
-interpolate_3(v2 input, v2 *ref, v4 *data);
+vertex_shader(Vertex v, Camera camera, Transform transform, v2 *screen_pos, v4 *color, v2 *tex_coord);
 
 static v4
 fragment_shader(v4 fg_color, v4 bg_color);
 
 static int
 vertex_compare_pos_y(const void *a, const void *b);
-
-void
-render_text(Framebuffer fb, const char* str, Font f, Transform t, v4 color) {
-    // TODO: Apply transform
-    uint32 x_offset = 0;
-    while (*str) {
-        uint32 start_x = ((*str - f.ascii_offset) * f.cwidth) % f.bitmap.width;
-        uint32 start_y = f.cheight * (((*str - f.ascii_offset) * f.cwidth) / f.bitmap.width);
-        for (uint32 y = 0; y < f.cheight; y++) {
-            for (uint32 x = 0; x < f.cwidth; x++) {
-                v4 fg_color = pixel_to_color(f.bitmap.pixels[start_x + x + (f.bitmap.height - (start_y + y + 1)) * f.bitmap.width]);
-                uint32 *bg = fb.data + x + x_offset + y * fb.width;
-                v4 bg_color = pixel_to_color(*bg);
-                *bg = color_to_pixel(fragment_shader(bg_color, fg_color));
-            }
-        }
-        x_offset += f.cwidth;
-        str ++;
-    }
-}
 
 void
 draw_string_to_texture(Texture *texture, const char *str, Font f, v4 color) {
@@ -101,21 +73,21 @@ screen_to_world_space(v2 coord, const Camera &camera) {
 }
 
 void
-draw_texture(Texture texture, Framebuffer fb, uint32 startx, uint32 starty) {
+debug_draw_texture(Texture texture, Framebuffer fb, uint32 startx, uint32 starty) {
     for (uint32 y = 0; y < texture.height; y++) {
         for (uint32 x = 0; x < texture.width; x++) {
-            fb.data[startx + x + (starty + y) * fb.width] = texture.pixels[x + (texture.height - y - 1) * texture.width];
+            fb.data[startx + x + (starty + y) * fb.width] = texture.pixels[x + y * texture.width];
         }
     }
 }
 
 void
-draw_texture_alpha(Texture texture, Framebuffer fb, uint32 startx, uint32 starty) {
+debug_draw_texture_alpha(Texture texture, Framebuffer fb, uint32 startx, uint32 starty) {
     for (uint32 y = 0; y < texture.height; y++) {
         for (uint32 x = 0; x < texture.width; x++) {
             uint32 *dest = fb.data + startx + x + (starty + y) * fb.width;
             uint32 *source = texture.pixels + x + y * texture.width;
-            *dest = color_to_pixel(color_blend(pixel_to_color(*source), pixel_to_color(*dest)));
+            *dest = color_to_pixel(fragment_shader(pixel_to_color(*dest), pixel_to_color(*source)));
         }
     }
 }
@@ -188,46 +160,54 @@ debug_draw_vector(Framebuffer fb, v2 v, v2 offset, v4 color) {
     debug_draw_triangle(fb, arrow, color);
 }
 
-
-
 void
-draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c) {
+draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c, Texture *texture) {
     //qsort(v, 3, sizeof(Vertex), vertex_compare_pos_y);
     v2 pos[3];
     v4 col[3];
-    vertex_shader(v[0], c, t, &pos[0], &col[0]);
-    vertex_shader(v[1], c, t, &pos[1], &col[1]);
-    vertex_shader(v[2], c, t, &pos[2], &col[2]);
+    v2 tex_coord[3];
+    vertex_shader(v[0], c, t, &pos[0], &col[0], &tex_coord[0]);
+    vertex_shader(v[1], c, t, &pos[1], &col[1], &tex_coord[1]);
+    vertex_shader(v[2], c, t, &pos[2], &col[2], &tex_coord[2]);
     if (pos[0].y > pos[2].y) {
         v2 temp_pos = pos[0];
+        v2 temp_tex_coord = tex_coord[0];
         v4 temp_col = col[0];
         pos[0] = pos[2];
+        tex_coord[0] = tex_coord[2];
         col[0] = col[2];
         pos[2] = temp_pos;
+        tex_coord[2] = temp_tex_coord;;
         col[2] = temp_col;
     }
     if (pos[0].y > pos[1].y) {
         v2 temp_pos = pos[0];
+        v2 temp_tex_coord = tex_coord[0];
         v4 temp_col = col[0];
         pos[0] = pos[1];
+        tex_coord[0] = tex_coord[1];
         col[0] = col[1];
         pos[1] = temp_pos;
+        tex_coord[1] = temp_tex_coord;;
         col[1] = temp_col;
     }
     if (pos[1].y > pos[2].y) {
         v2 temp_pos = pos[1];
+        v2 temp_tex_coord = tex_coord[0];
         v4 temp_col = col[1];
         pos[1] = pos[2];
+        tex_coord[1] = tex_coord[2];
         col[1] = col[2];
         pos[2] = temp_pos;
+        tex_coord[2] = temp_tex_coord;;
         col[2] = temp_col;
     }
 
     if (round(pos[1].y) == round(pos[2].y)) {
-        draw_flat_bottom_triangle(fb, pos, col);
+        draw_flat_bottom_triangle(fb, pos, col, tex_coord, texture);
     }
     else if (round(pos[0].y) == round(pos[1].y)) {
-        draw_flat_top_triangle(fb, pos, col);
+        draw_flat_top_triangle(fb, pos, col, tex_coord, texture);
     }
     else {
         v2 split = {pos[0].x + (pos[1].y - pos[0].y) * (pos[2].x - pos[0].x) / (pos[2].y - pos[0].y), pos[1].y};
@@ -236,16 +216,21 @@ draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c) {
         real32 c1 = det(split, pos[2], pos[0]) / area2;
         real32 c2 = 1.0f - c0 - c1;
         v4 split_col = c0 * col[0] + c1 * col[1] + c2 * col[2];
+        v2 split_tex_coord = c0 * tex_coord[0] + c1 * tex_coord[1] + c2 * tex_coord[2];
         v2 temp_pos = pos[2];
         v4 temp_col = col[2];
+        v2 temp_tex_coord = tex_coord[2];
         pos[2] = split;
         col[2] = split_col;
-        draw_flat_bottom_triangle(fb, pos, col);
+        tex_coord[2] = split_tex_coord;
+        draw_flat_bottom_triangle(fb, pos, col, tex_coord, texture);
         pos[2] = temp_pos;
         col[2] = temp_col;
+        tex_coord[2] = temp_tex_coord;
         pos[0] = split;
         col[0] = split_col;
-        draw_flat_top_triangle(fb, pos, col);
+        tex_coord[0] = split_tex_coord;
+        draw_flat_top_triangle(fb, pos, col, tex_coord, texture);
     }
 }
 
@@ -271,13 +256,13 @@ debug_draw_triangle(Framebuffer fb, v2 *p, v4 color) {
 }
 
 void
-draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, v4 color) {
+draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture *texture) {
     for (uint32 i = 0; i < mesh.index_count; i += 3) {
         Vertex tri[3];
         tri[0] = mesh.v_buffer[mesh.i[i + 0]];
         tri[1] = mesh.v_buffer[mesh.i[i + 1]];
         tri[2] = mesh.v_buffer[mesh.i[i + 2]];
-        draw_triangle(fb, tri, t, camera);
+        draw_triangle(fb, tri, t, camera, texture);
     }
 }
 
@@ -382,17 +367,37 @@ debug_draw_flat_bottom_triangle(Framebuffer fb, const v2 *p, v4 color) {
     }
 }
 
-static v4
-interpolate_3(v2 input, v2 *ref, v4 *data) {
-    float d0 = magnitude(input - ref[0]);
-    float d1 = magnitude(input - ref[1]);
-    float d2 = magnitude(input - ref[2]);
-    v4 result = (d0 * data[0] + d1 * data[1] + d2 * data[2]) / (d0 + d1 + d2);
-    return result;
+
+static void
+draw_fragment(Framebuffer fb, uint32 x, uint32 y, v2 *pos, v4 *color, Texture *texture, v2 *tex_coord, real32 area2) {
+    v2 p = {(real32) x, (real32) y};
+    real32 c0 = det(p, pos[1], pos[2]) / area2;
+    real32 c1 = det(p, pos[2], pos[0]) / area2;
+    real32 c2 = 1.0f - c0 - c1;
+    if ((c0 - 1) * c0 <= 0 && (c1 - 1) * c1 <= 0 && (c2 - 1) * c2 <= 0) {
+        v4 fg_color;
+        if (color) {
+            fg_color = c0 * color[0] + c1 * color[1] + c2 * color[2];
+        }
+        if (texture) {
+            v2 uv = c0 * tex_coord[0] + c1 * tex_coord[1] + c2 * tex_coord[2];
+            uint32 shortest_side = min(texture->width, texture->height);
+            uint32 u = round(uv.x * shortest_side); // TODO: Round or floor here?
+            uint32 v = round(uv.y * shortest_side);
+
+            uint32 col = texture->pixels[u + v * texture->width];
+            if (col && col != 0xFFFFFFFF && (v == 0))
+                int break_here = 1;
+            fg_color = color_blend(pixel_to_color(texture->pixels[u + v * texture->width]), fg_color);
+        }
+        uint32 *old = &fb.data[x + y * fb.width];
+        v4 old_c = pixel_to_color(*old);
+        *old = color_to_pixel(fragment_shader(fg_color, old_c));
+    }
 }
 
 static void
-draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color) {
+draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture) {
     assert(pos[0].y < pos[1].y && pos[0].y < pos[2].y);
     assert(round(pos[1].y) == round(pos[2].y));
     v2 p_l = pos[1].x < pos[2].x ? pos[1] : pos[2];
@@ -405,16 +410,7 @@ draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color) {
     for (int32 y = pos[0].y; y <= min(p_l.y, fb.height - 1); y++) {
         if (y >= 0) {
             for (int32 x = max(0, x_l); x <= min(fb.width - 1, x_r - 1); x++) {
-                v2 p = {(real32) x, (real32) y};
-                real32 c0 = det(p, pos[1], pos[2]) / area2;
-                real32 c1 = det(p, pos[2], pos[0]) / area2;
-                real32 c2 = 1.0f - c0 - c1;
-                if ((c0 - 1) * c0 <= 0 && (c1 - 1) * c1 <= 0 && (c2 - 1) * c2 <= 0) {
-                    v4 fg_color = c0 * color[0] + c1 * color[1] + c2 * color[2];
-                    uint32 *old = &fb.data[x + y * fb.width];
-                    v4 old_c = pixel_to_color(*old);
-                    *old = color_to_pixel(fragment_shader(fg_color, old_c));
-                }
+                draw_fragment(fb, x, y, pos, color, texture, tex_coord, area2);
             }
         }
         x_l += dx_l;
@@ -423,7 +419,7 @@ draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color) {
 }
 
 static void
-draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color) {
+draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture) {
     assert(pos[2].y > pos[0].y && pos[2].y > pos[1].y);
     assert(round(pos[0].y) == round(pos[1].y));
     v2 p_l = pos[0].x < pos[1].x ? pos[0] : pos[1];
@@ -436,16 +432,7 @@ draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color) {
     for (int32 y = p_l.y; y <= min(pos[2].y, fb.height - 1); y++) {
         if (y >= 0) {
             for (int32 x = max(0, x_l); x <= min(fb.width - 1, x_r - 1); x++) {
-                v2 p = {(real32) x, (real32) y};
-                real32 c0 = det(p, pos[1], pos[2]) / area2;
-                real32 c1 = det(p, pos[2], pos[0]) / area2;
-                real32 c2 = 1.0f - c0 - c1;
-                if ((c0 - 1) * c0 <= 0 && (c1 - 1) * c1 <= 0 && (c2 - 1) * c2 <= 0) {
-                    v4 fg_color = c0 * color[0] + c1 * color[1] + c2 * color[2];
-                    uint32 *old = &fb.data[x + y * fb.width];
-                    v4 old_c = pixel_to_color(*old);
-                    *old = color_to_pixel(fragment_shader(fg_color, old_c));
-                }
+                draw_fragment(fb, x, y, pos, color, texture, tex_coord, area2);
             }
         }
         x_l += dx_l;
@@ -478,10 +465,10 @@ debug_draw_flat_top_triangle(Framebuffer fb, const v2 *p, v4 color) {
 }
 
 static void
-vertex_shader(Vertex v, Camera cam, Transform t, v2 *screen_pos, v4 *color) {
+vertex_shader(Vertex v, Camera cam, Transform t, v2 *screen_pos, v4 *color, v2 *tex_coord) {
     *screen_pos = world_to_screen_space(transform(v.coord, t), cam);
     *color = v.color;
-    // *color stays unchanged for now
+    *tex_coord = v.tex_coord;
 }
 
 static v4

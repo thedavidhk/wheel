@@ -19,11 +19,22 @@ create_polygon(Vertexbuffer *vb, Indexbuffer *ib, const Vertex *verts, uint32 co
 
 Mesh
 create_rectangle(Vertexbuffer *vb, Indexbuffer *ib, v2 min, v2 max, v4 color) {
+    // DEBUG: Take care of texture coordinates
+    v2 uv[4];
+    real32 width = max.x - min.x;
+    real32 height = max.y - min.y;
+    real32 shortest_side = min(width, height);
+    real32 longest_side = max(width, height);
+    uv[0] = {};
+    uv[1] = v2{width / shortest_side, 0};
+    uv[2] = v2{width / shortest_side, height / shortest_side};
+    uv[3] = v2{0, height / shortest_side};
+
     Vertex verts[4] = {
-        Vertex{min, color},
-        Vertex{v2{max.x, min.y}, color},
-        Vertex{max, color},
-        Vertex{v2{min.x, max.y}, color}
+        Vertex{min, color, uv[0]},
+        Vertex{v2{max.x, min.y}, color, uv[1]},
+        Vertex{max, color, uv[2]},
+        Vertex{v2{min.x, max.y}, color, uv[3]}
     };
     uint32 indices[6] = {0, 1, 2, 0, 2, 3};
     return create_polygon(vb, ib, verts, 4, indices, 6);

@@ -15,6 +15,7 @@ initialize_memory(uint64 mem_size) {
         printf("Could not allocate game memory. Quitting...\n");
         exit(1);
     }
+    memset(mem, 0, mem_size);
     mem->size = mem_size;
     mem->data = (void *)(mem + 1);
     mem->free = mem->data;

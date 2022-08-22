@@ -37,7 +37,7 @@ load_bmp_file(const char* filename, AppMemory *mem) {
     f.bytes = (uint8 *)get_memory(mem, (fsize - offset));
     fseek(ptr, offset, SEEK_SET);
     for (uint32 y = f.height; y > 0; y--) {
-        fread(f.pixels + y * f.width - 1, 4, f.width, ptr);
+        fread(f.pixels + (y - 1) * f.width, 4, f.width, ptr);
     }
     fclose(ptr);
     return f;
@@ -121,18 +121,21 @@ initialize_app() {
         0, 1, 2
     };
 
-
     int32 scenery_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Rotation;
+
+    uint32 floor = add_entity(scene, scenery_mask | CM_Texture);
+    scene->transforms[floor].pos = {0, 0};
+    scene->transforms[floor].rot = 0;
+    scene->colors[floor] = {0.4, 0.2, 0.2, 0.8};
+    scene->textures[floor] = as->string_texture;
+    scene->meshes[floor] = create_rectangle(vb, ib, {-3, -0.5}, {3, 0.5}, scene->colors[floor]);
+
+
+    /*
     uint32 wall = add_entity(scene, scenery_mask);
     scene->transforms[wall].pos = {1, 1};
     scene->colors[wall] = {0.3, 0.7, 1, 0.8};
     scene->meshes[wall] = create_polygon(vb, ib, data, count_v, indices, count_i);
-
-    uint32 floor = add_entity(scene, scenery_mask);
-    scene->transforms[floor].pos = {0, 6};
-    scene->transforms[floor].rot = 0.2;
-    scene->colors[floor] = {1, 1, 1, 0.8};
-    scene->meshes[floor] = create_rectangle(vb, ib, {-20, -0.5}, {20, 0.5}, scene->colors[floor]);
 
     int32 moveable_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Velocity | CM_Mass | CM_Friction;
     uint32 pebble = add_entity(scene, moveable_mask);
@@ -151,6 +154,7 @@ initialize_app() {
     scene->forces[scene->player_index] = 2;
     scene->masses[scene->player_index].value = 1;
     scene->frictions[scene->player_index] = 1;
+    */
 
     scene_reset_predictions(scene);
 
@@ -194,8 +198,8 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
 
     //DEBUG bitmaps
 
-    draw_texture_alpha(as->testimg, fb, 20, 20);
-    draw_texture_alpha(as->string_texture, fb, 200, 200);
+    //debug_draw_texture_alpha(as->testimg, fb, 20, 20);
+    //debug_draw_texture_alpha(as->string_texture, fb, 200, 200);
 
 
     //draw_entities_wireframe(scene, fb);
@@ -219,7 +223,7 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
 
     char str[64];
     sprintf(str, "FPS: %2d", as->fps);
-    render_text(fb, str, as->test_font, {v2{400, 0}, 0.5, 0}, {1, 1, 1, 1});
+    //printf("%s\n", str);
     /*
     if (frame_time > 1.0f / ((double)FRAME_RATE) + 0.006f) {
         printf("Frame took too long: %6.4fs\n", frame_time);

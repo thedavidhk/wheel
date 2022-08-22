@@ -60,7 +60,10 @@ draw_entities(Scene *scene, Framebuffer fb) {
     static constexpr int32 MASK = CM_Mesh | CM_Pos | CM_Color;
     for (uint32 i = 1; i < scene->entity_count; i++) {
         if ((scene->entities[i] & MASK) == MASK) {
-            draw_mesh(scene->camera, fb, scene->meshes[i], scene->transforms[i], scene->colors[i]);
+            if (scene->entities[i] & CM_Texture)
+                draw_mesh(scene->camera, fb, scene->meshes[i], scene->transforms[i], &scene->textures[i]);
+            else
+                draw_mesh(scene->camera, fb, scene->meshes[i], scene->transforms[i], 0);
 
             // DEBUG
             v2 vel_screen = world_to_screen_space(scene->movements[i].v, scene->camera);
@@ -157,6 +160,7 @@ initialize_scene(AppMemory *mem) {
     scene->predicted_transforms = (Transform *)get_memory(mem, scene->max_entity_count * sizeof(Transform));
     scene->meshes = (Mesh *)get_memory(mem, scene->max_entity_count * sizeof(Mesh));
     scene->colors = (v4 *)get_memory(mem, scene->max_entity_count * sizeof(v4));
+    scene->textures = (Texture *)get_memory(mem, scene->max_entity_count * sizeof(Texture));
     scene->movements = (Movement *)get_memory(mem, scene->max_entity_count * sizeof(Movement));
     scene->predicted_movements = (Movement *)get_memory(mem, scene->max_entity_count * sizeof(Movement));
     scene->forces = (real32 *)get_memory(mem, scene->max_entity_count * sizeof(real32));
@@ -190,7 +194,6 @@ get_entity_from_screen_pos(int32 x, int32 y, Scene *scene) {
 
 void
 highlight_entity(Scene *scene, Framebuffer fb, uint32 id) {
-    draw_mesh(scene->camera, fb, scene->meshes[id], scene->transforms[id], brighten(scene->colors[id], 0.2));
     draw_mesh_wireframe(scene->camera, fb, scene->meshes[id], scene->transforms[id], scene->colors[id], 3);
 }
 

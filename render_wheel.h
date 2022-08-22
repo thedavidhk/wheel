@@ -36,22 +36,22 @@ void
 debug_draw_triangle(Framebuffer fb, v2 *p, v4 color);
 
 void
-draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, v4 color);
+draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture *texture);
+
+void
+draw_mesh_textured(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture texture);
 
 void
 draw_mesh_wireframe(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, v4 color, uint32 thickness);
 
 void
-draw_texture(Texture bmp, Framebuffer fb, uint32 startx, uint32 starty);
+debug_draw_texture(Texture bmp, Framebuffer fb, uint32 startx, uint32 starty);
 
 void
-draw_texture_alpha(Texture bmp, Framebuffer fb, uint32 startx, uint32 starty);
+debug_draw_texture_alpha(Texture bmp, Framebuffer fb, uint32 startx, uint32 starty);
 
 void
 debug_draw_vector(Framebuffer fb, v2 v, v2 offset, v4 color);
-
-void
-render_text(Framebuffer fb, const char *str, Font f, Transform t, v4 color);
 
 void
 draw_string_to_texture(Texture *texture, const char *str, Font f, v4 color);

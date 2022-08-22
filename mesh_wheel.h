@@ -2,10 +2,13 @@
 
 #include "math_wheel.h"
 
+// TODO: Probably don't want to hard-code the vertex attributes. Otherwise I
+// have to change the create_mesh functions every time I add a new vertex
+// attribute.
 struct Vertex {
     v2 coord;
     v4 color;
-    //v2 tex_coord;
+    v2 tex_coord;
 };
 
 #if 1
