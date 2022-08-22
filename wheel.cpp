@@ -105,30 +105,33 @@ initialize_app() {
     Indexbuffer *ib = scene->indexbuffer;
 
     // Initialize player.
-    constexpr uint32 count_v = 3;
+    constexpr uint32 count_v = 4;
     Vertex data[count_v] = {
-        {{ 0.0, -0.5}, {1, 0, 0, 1}},
-        {{ 0.5,  0.5}, {0, 1, 0, 1}},
-        {{-0.5,  0.5}, {0, 0, 1, 1}}
+        {{-3.0, -0.5}, {1, 0, 0, 1}, {0, 0}},
+        {{ 3.0, -0.5}, {0, 1, 0, 1}, {6, 0}},
+        {{ 3.0,  0.5}, {0, 0, 1, 1}, {6, 1}},
+        {{-3.0,  0.5}, {0, 0, 0, 0}, {0, 1}}
     };
     //Vertex data[count_v] = {
     //    {-0.5, -0.5},
     //    { 0.5, -0.3},
     //    {-0.5,  0.5}
     //};
-    constexpr uint32 count_i = 3;
+    constexpr uint32 count_i = 6;
     uint32 indices[count_i] = {
-        0, 1, 2
+        0, 1, 2, 0, 2, 3
     };
 
     int32 scenery_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Rotation;
 
     uint32 floor = add_entity(scene, scenery_mask | CM_Texture);
     scene->transforms[floor].pos = {0, 0};
-    scene->transforms[floor].rot = 0;
+    scene->transforms[floor].rot = 20 * PI / 180.0;
+    //scene->transforms[floor].scale = {0.2, 0.3};
     scene->colors[floor] = {0.4, 0.2, 0.2, 0.8};
     scene->textures[floor] = as->string_texture;
-    scene->meshes[floor] = create_rectangle(vb, ib, {-3, -0.5}, {3, 0.5}, scene->colors[floor]);
+    //scene->meshes[floor] = create_rectangle(vb, ib, {-3, -0.5}, {3, 0.5}, scene->colors[floor]);
+    scene->meshes[floor] = create_polygon(vb, ib, data, count_v, indices, count_i);
 
 
     /*
@@ -219,11 +222,11 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
         as->fps = round((as->frame_count / as->app_time));
         as->frame_count = 0;
         as->app_time = 0;
+        char str[64];
+        sprintf(str, "FPS: %2d", as->fps);
+        printf("%s\n", str);
     }
 
-    char str[64];
-    sprintf(str, "FPS: %2d", as->fps);
-    //printf("%s\n", str);
     /*
     if (frame_time > 1.0f / ((double)FRAME_RATE) + 0.006f) {
         printf("Frame took too long: %6.4fs\n", frame_time);
@@ -268,7 +271,7 @@ mouse_button_callback(MouseButton btn, InputType t, int32 x, int32 y, AppHandle 
     Scene *scene = as->current_scene;
     switch (btn) {
     case BUTTON_1:
-        if (t == IT_PRESSED) {
+        if (t == IT_PRESSED && (scene->entities[scene->hovered_entity] & CM_Selectable)) {
             scene->selected_entity = scene->hovered_entity;
         }
         else {

@@ -162,7 +162,6 @@ debug_draw_vector(Framebuffer fb, v2 v, v2 offset, v4 color) {
 
 void
 draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c, Texture *texture) {
-    //qsort(v, 3, sizeof(Vertex), vertex_compare_pos_y);
     v2 pos[3];
     v4 col[3];
     v2 tex_coord[3];
@@ -193,7 +192,7 @@ draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c, Texture *texture
     }
     if (pos[1].y > pos[2].y) {
         v2 temp_pos = pos[1];
-        v2 temp_tex_coord = tex_coord[0];
+        v2 temp_tex_coord = tex_coord[1];
         v4 temp_col = col[1];
         pos[1] = pos[2];
         tex_coord[1] = tex_coord[2];
@@ -384,10 +383,6 @@ draw_fragment(Framebuffer fb, uint32 x, uint32 y, v2 *pos, v4 *color, Texture *t
             uint32 shortest_side = min(texture->width, texture->height);
             uint32 u = round(uv.x * shortest_side); // TODO: Round or floor here?
             uint32 v = round(uv.y * shortest_side);
-
-            uint32 col = texture->pixels[u + v * texture->width];
-            if (col && col != 0xFFFFFFFF && (v == 0))
-                int break_here = 1;
             fg_color = color_blend(pixel_to_color(texture->pixels[u + v * texture->width]), fg_color);
         }
         uint32 *old = &fb.data[x + y * fb.width];

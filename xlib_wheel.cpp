@@ -342,10 +342,15 @@ int main(int argc, char **argv) {
         clock_gettime(CLOCK_REALTIME, &t_end);
         d_t_work = timeDiff(t_start, t_end);
 
-        while(d_t_work < 1.0f/FRAME_RATE) {
-            clock_gettime(CLOCK_REALTIME, &t_end);
-            d_t_work = timeDiff(t_start, t_end);
+        if (d_t_work < 1.0f/FRAME_RATE) {
+            // TODO: This does not seem reliable
+            usleep((1.0 / FRAME_RATE - d_t_work) * 1000000);
         }
+
+        //while(d_t_work < 1.0f/FRAME_RATE) {
+        //    clock_gettime(CLOCK_REALTIME, &t_end);
+        //    d_t_work = timeDiff(t_start, t_end);
+        //}
 #endif
 
         clock_gettime(CLOCK_REALTIME, &t_end);

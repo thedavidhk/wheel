@@ -17,7 +17,8 @@ typedef enum {
     CM_Friction         = 1 <<  7,
     CM_Collision        = 1 <<  8,
     CM_BoxCollider      = 1 <<  9,
-    CM_Texture          = 1 << 10
+    CM_Texture          = 1 << 10,
+    CM_Selectable       = 1 << 11
 } ComponentMask; 
 
 struct Scene {

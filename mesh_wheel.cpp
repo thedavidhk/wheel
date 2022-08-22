@@ -24,7 +24,6 @@ create_rectangle(Vertexbuffer *vb, Indexbuffer *ib, v2 min, v2 max, v4 color) {
     real32 width = max.x - min.x;
     real32 height = max.y - min.y;
     real32 shortest_side = min(width, height);
-    real32 longest_side = max(width, height);
     uv[0] = {};
     uv[1] = v2{width / shortest_side, 0};
     uv[2] = v2{width / shortest_side, height / shortest_side};

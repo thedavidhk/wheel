@@ -13,6 +13,8 @@
 
 #define EPSILON 0.001f
 
+#define PI 3.14159265359
+
 #define FINVALID (float)0xFFFFFFFF
 
 union v2 {
