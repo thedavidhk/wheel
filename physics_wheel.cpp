@@ -3,17 +3,73 @@
 
 #include "physics_wheel.h"
 
-void
-accelerate(v2 direction, real32 force, real32 mass, Movement *m, real64 d_t) {
-    direction = normalize(direction);
-    m->a += (direction * force/mass);
+struct AxisProjections {
+    real32 min, max;
+    v2 v_min, v_max, v_min2, v_max2;
+};
+
+static void
+get_points_on_axis_sweeping(Mesh mesh, v2 axis, Transform t, Transform sweep_offset, AxisProjections *out);
+
+static void
+get_points_on_axis(Mesh mesh, v2 axis, Transform t, AxisProjections *out);
+
+static void
+calculate_normals(uint32 count, v2 *vertices, v2 *normals);
+
+uint32
+body_create(Physics *system, BodyDef def) {
+    Body body;
+    body.p = def.p;
+    body.v = def.v;
+    body.p_ang = def.p_ang;
+    body.v_ang = def.v_ang;
+    body.collision_mask = def.collision_mask;
+    body.m = def.m;
+    if (abs(body.m) > EPSILON) {
+        body.m_inv = 1 / body.m;
+    }
+    else {
+        body.m_inv = 0;
+    }
+    assert(system->body_count < MAX_BODY_COUNT);
+    system->bodies[system->body_count] = body;
+    return system->body_count++;
 }
 
-// TODO Still very buggy!!
-Collision
-check_collision(Mesh a, Mesh b, Transform t_a, Transform t_b, Movement mov_a, Movement mov_b, real64 d_t) {
+uint32
+shape_create_circle(Physics *system, v2 center, real32 radius) {
+    Shape shape;
+    shape.type = ST_CIRCLE;
+    shape.circle.center = center;
+    shape.circle.radius = radius;
+    assert(system->shape_count < MAX_SHAPE_COUNT);
+    system->shapes[system->shape_count] = shape;
+    return system->shape_count++;
+}
+
+uint32
+shape_create_polygon(Physics *system, uint32 count, v2 *vertices, v2 *normals) {
+    assert(count <= MAX_POLYGON_VERTICES);
+    Shape shape;
+    shape.type = ST_POLYGON;
+    shape.polygon.count = count;
+    calculate_normals(count, vertices, normals);
+    shape.polygon.vertices = vertices;
+    shape.polygon.normals = normals;
+    system->shapes[system->shape_count] = shape;
+    return system->shape_count++;
+}
+
+#if NEW_PHYSICS_SYSTEM
+void
+check_collision(Collision *collision, Body a, Body b, real64 dt, bool sweep) {
+    
+}
+#else
+void
+check_collision(Collision *collision, Mesh a, Mesh b, Transform t_a, Transform t_b, v2 v_a, v2 v_b, real64 d_t, bool sweeping) {
     // TODO: Probably allocate memory to allow for a larger number of lines.
-    Collision result = {};
     constexpr int32 MAX_LINES = 64;
     v2 normals[MAX_LINES];
     assert(!(a.index_count > MAX_LINES || b.index_count > MAX_LINES));
@@ -31,184 +87,289 @@ check_collision(Mesh a, Mesh b, Transform t_a, Transform t_b, Movement mov_a, Mo
     real32 min_overlap = FLT_MAX;
     v2 min_overlap_axis;
 
-    // Extend colliders to include origin location
-    Transform t_a_ext = t_a;
-    t_a_ext.pos += mov_a.v * d_t;
-    t_a_ext.rot += mov_a.rot_v * d_t;
-    Transform t_b_ext = t_b;
-    t_b_ext.pos += mov_b.v * d_t;
-    t_b_ext.rot += mov_b.rot_v * d_t;
-
-    bool a_has_face_col, b_has_face_col;
+    bool a_has_face_col = 0, b_has_face_col = 0;
     v2 c_a, c_a2;
     v2 c_b, c_b2;
 
+    // Extend colliders to include origin location
+    Transform t_a_ext = t_a;
+    t_a_ext.pos += v_a * d_t;
+    //t_a_ext.rot += *v_a_ang * d_t;
+    Transform t_b_ext = t_b;
+    t_b_ext.pos += v_b * d_t;
+    //t_b_ext.rot += *v_b_ang * d_t;
+
     // Project data onto axes
     for (uint32 i = 0; i < a.index_count + b.index_count; i++) {
-        real32 min_a = FLT_MAX;
-        real32 max_a = -FLT_MAX;
-        real32 min_b = FLT_MAX;
-        real32 max_b = -FLT_MAX;
-        v2 v_min_a, v_min_a2, v_max_a, v_max_a2, v_min_b, v_min_b2, v_max_b, v_max_b2;
-        normals[i] = normalize(normals[i]);
+        normals[i] = normalize(normals[i]); // TODO: Change rnormal() and lnormal() in math to always return normalized vectors
 
-        for (uint32 a_i = 0; a_i < a.index_count; a_i++) {
-            v2 v = transform(a.v_buffer[a.i[a_i]].coord, t_a);
-            real32 proj = dot(v, normals[i]);
-            v2 v_ext = transform(a.v_buffer[a.i[a_i]].coord, t_a_ext);
-            real32 proj_ext = dot(v_ext, normals[i]);
-            if (proj < min_a) {
-                if (proj_ext < proj) {
-                    min_a = proj_ext;
-                    v_min_a2 = v;
-                    v_min_a = v_ext;
-                } else {
-                    min_a = proj;
-                    v_min_a2 = proj_ext < min_a ? v_ext : v_min_a;
-                    v_min_a = v;
-                }
-            }
-            else if (proj_ext < min_a) {
-                assert(proj > proj_ext);
-                min_a = proj_ext;
-                v_min_a2 = v_min_a;
-                v_min_a = v_ext;
-            }
-            if (proj > max_a) {
-                if (proj_ext > proj) {
-                    max_a = proj_ext;
-                    v_max_a2 = v;
-                    v_max_a = v_ext;
-                } else {
-                    max_a = proj;
-                    v_max_a2 = proj_ext > max_a ? v_ext : v_max_a;
-                    v_max_a = v;
-                }
-            }
-            else if (proj_ext > max_a) {
-                assert(proj < proj_ext);
-                max_a = proj_ext;
-                v_max_a2 = v_max_a;
-                v_max_a = v_ext;
-            }
+        AxisProjections proj_a, proj_b;
+
+        if (sweeping) {
+            get_points_on_axis_sweeping(a, normals[i], t_a, t_a_ext, &proj_a);
+            get_points_on_axis_sweeping(b, normals[i], t_b, t_b_ext, &proj_b);
         }
-        for (uint32 b_i = 0; b_i < b.index_count; b_i++) {
-            v2 v = transform(b.v_buffer[b.i[b_i]].coord, t_b);
-            real32 proj = dot(v, normals[i]);
-            v2 v_ext = transform(b.v_buffer[b.i[b_i]].coord, t_b_ext);
-            real32 proj_ext = dot(v_ext, normals[i]);
-            if (proj < min_b) {
-                if (proj_ext < proj) {
-                    min_b = proj_ext;
-                    v_min_b2 = v_min_b;
-                    v_min_b = v_ext;
-                } else {
-                    min_b = proj;
-                    v_min_b2 = proj_ext < min_b ? v_ext : v_min_b;
-                    v_min_b = v;
-                }
-            }
-            else if (proj_ext < min_b) {
-                assert(proj > proj_ext);
-                min_b = proj_ext;
-                v_min_b2 = v_min_b;
-                v_min_b = v_ext;
-            }
-            if (proj > max_b) {
-                if (proj_ext > proj) {
-                    max_b = proj_ext;
-                    v_max_b2 = v_max_b;
-                    v_max_b = v_ext;
-                } else {
-                    max_b = proj;
-                    v_max_b2 = proj_ext > max_b ? v_ext : v_max_b;
-                    v_max_b = v;
-                }
-            }
-            else if (proj_ext > max_b) {
-                assert(proj < proj_ext);
-                max_b = proj_ext;
-                v_max_b2 = v_max_b;
-                v_max_b = v_ext;
-            }
+        else {
+            get_points_on_axis(a, normals[i], t_a, &proj_a);
+            get_points_on_axis(b, normals[i], t_b, &proj_b);
         }
-        if (min_a > max_b || max_a < min_b)
-            return result; // Does not collide
+
+        if (proj_a.min > proj_b.max || proj_a.max < proj_b.min) {
+
+            return; // Does not collide
+        }
 
 
         // Determine minimum translation vector
-        real32 o1 = max_a - min_b;
-        real32 o2 = max_b - min_a;
+        real32 o1 = proj_a.max - proj_b.min;
+        real32 o2 = proj_b.max - proj_a.min;
         real32 o = min(o1, o2);
         if (o < min_overlap) {
             min_overlap = o;
             min_overlap_axis = normals[i];
             a_has_face_col = (i < a.index_count);
             b_has_face_col = !a_has_face_col;
-        }
-        if (o1 < o2) {
-            c_a = v_max_a;
-            c_a2 = v_max_a2;
-            c_b = v_min_b;
-            c_b2 = v_min_b2;
-            min_overlap_axis *= -1;                
-        } else {
-            c_a = v_min_a;
-            c_a2 = v_min_a2;
-            c_b = v_max_b;
-            c_b2 = v_max_b2;
+            if (o1 < o2) {
+                min_overlap_axis *= -1;
+                c_a = proj_a.v_max;
+                c_a2 = proj_a.v_max2;
+                c_b = proj_b.v_min;
+                c_b2 = proj_b.v_min2;
+            }
+            else {
+                c_a = proj_a.v_min;
+                c_a2 = proj_a.v_min2;
+                c_b = proj_b.v_max;
+                c_b2 = proj_b.v_max2;
+            }
         }
     }
-    // ONLY AT THIS POINT WE KNOW THAT WE HAVE A COLLISION
-    // TODO: Find the collision point
 
     // Check for face-face collision
     if (a_has_face_col) {
-        result.poi = c_b - d_t * mov_b.v;
-        if (magnitude(c_b - c_b2) < EPSILON) {
+        collision->poi_a = transform(c_b - d_t * v_b, t_a);
+        collision->poi_b = transform(c_b, t_b);
+        // TODO: This computation might be unneccessary. Check again which variables in this whole function are really needed!
+        if (dot(c_b, min_overlap_axis) - dot(c_b2, min_overlap_axis) < EPSILON) {
             b_has_face_col = true;
         }
     }
     if (b_has_face_col) {
-        result.poi = c_a - d_t * mov_a.v;
-        if (magnitude(c_a - c_b2) < EPSILON) {
+        collision->poi_b = transform(c_a - d_t * v_a, t_b);
+        collision->poi_a = transform(c_a, t_a);
+        if (dot(c_a, min_overlap_axis) - dot(c_a2, min_overlap_axis) < EPSILON) {
             a_has_face_col = true;
         }
     }
-    if (a_has_face_col && b_has_face_col)
-        printf("We have a face-face collision and don't know how to deal with it!\n");;
-    
-    result.collided = true;
-    //if (abs(result.mtv.x) < EPSILON && abs(result.mtv.y) < EPSILON)
-        //result.collided = false;
-    assert(min_overlap > (-EPSILON));
-    result.mtv = normalize(min_overlap_axis) * min_overlap;
-    return result;
+    if (a_has_face_col && b_has_face_col) {
+        //printf("We have a face-face collision and don't know how to deal with it!\n");
+        
+        // TODO:
+        // - Project points onto normal of normal (i.e. collision line)
+        // - Check if center of mass is inside bounds of other object.
+        // - If it is, that is your collision point
+        // - If it is not, check the min/max point that is closest to the com
+        v2 collision_line = rnormal(min_overlap_axis);
+        v2 vcom_a = center_of_mass(a);
+        v2 vcom_b = center_of_mass(b);
+        real32 a1 = dot(c_a, collision_line);
+        real32 a2 = dot(c_a2, collision_line);
+        real32 b1 = dot(c_b, collision_line);
+        real32 b2 = dot(c_b2, collision_line);
+        real32 a_min, b_min, a_max, b_max, a_com, b_com;
+        v2 a_min_v, b_min_v, a_max_v, b_max_v;
+        if (a1 < a2) {
+            a_min = a1;
+            a_max = a2;
+            a_min_v = c_a;
+            a_max_v = c_a2;
+        }
+        else {
+            a_min = a2;
+            a_max = a1;
+            a_min_v = c_a2;
+            a_max_v = c_a;
+        }
+        if (b1 < b2) {
+            b_min = b1;
+            b_max = b2;
+            b_min_v = c_b;
+            b_max_v = c_b2;
+        }
+        else {
+            b_min = b2;
+            b_max = b1;
+            b_min_v = c_b2;
+            b_max_v = c_b;
+        }
+        a_com = dot(transform(vcom_a, t_a), collision_line);
+        b_com = dot(transform(vcom_b, t_b), collision_line);
+        if (a_com >= b_min && a_com <= b_max) {
+            collision->poi_a = vcom_a + projection(vcom_a - c_a, min_overlap_axis);
+        }
+        else if (abs(a_com - b_min) < abs(a_com - b_max)) {
+            collision->poi_a = b_min_v;
+        }
+        else {
+            collision->poi_a = b_max_v;
+        }
+        if (b_com >= b_min && b_com <= b_max) {
+            collision->poi_b = vcom_b + projection(vcom_b - c_b, min_overlap_axis);
+        }
+        else if (abs(b_com - a_min) < abs(b_com - a_max)) {
+            collision->poi_b = b_min_v;
+        }
+        else {
+            collision->poi_b = b_max_v;
+        }
+    }
+    collision->collided = true;
+    collision->p_a = t_a.pos;
+    collision->p_b = t_b.pos;
+    collision->mesh_a = a;
+    collision->mesh_b = b;
+    collision->normal = min_overlap_axis;
+    collision->overlap = min_overlap;
+}
+#endif
+
+void
+apply_external_forces(Movement *movements, Material *materials, Collision *collisions, uint32 *masks, uint32 count, real64 d_t) {
+    static constexpr uint32 MASK = (CM_Pos | CM_Velocity);
+    for (uint32 i = 0; i < count; i++) {
+        if ((masks[i] & MASK) == MASK) {
+            movements[i].a = 9.81 * v2{0, 1}; // GRAVITY
+            if (collisions[i].collided) {
+                movements[i].a -= materials[i].friction_dynamic * movements[i].v;
+            }
+        }
+    }
 }
 
 void
-resolve_collision(Collision col, Mesh mesh_a, Mesh mesh_b, Transform *t_a, Transform *t_b, Movement *mov_a, Movement *mov_b,
-        Mass m_a, Mass m_b)
-{
-    /*
-    v2 dv_a = projection(mov_a->v, col.mtv);
-    v2 dv_b = projection(mov_b->v, col.mtv);
-    v2 dv = m_b.value * dv_b + m_a.value * dv_a;
-    mov_a->v += dv / (m_a.value + m_b.value) - dv_a;
-    mov_b->v += dv / (m_a.value + m_b.value) - dv_b;
-    t_a->pos += col.mtv;
-    t_b->pos -= col.mtv;
-    */
+apply_impulse(Mesh mesh, real32 m, v2 com, v2 *v, v2 poi, v2 f) {
+    v2 p_to_m = com - poi;
+    real32 factor_lin = 1.0f;
+    //real32 factor_ang = 0.0f;
+    if (magnitude( p_to_m) >= EPSILON) {
+        real32 cosine = dot(f, p_to_m) / (magnitude(f) * magnitude(p_to_m));
+        factor_lin = 0.5 + 0.5 * cosine;
+        //factor_ang = 1 - cosine;
+    }
+    v2 dv_lin = f * factor_lin / m;
+    // TODO: Assume rectangle for now!
+    //real32 m_inertia = area_squared(mesh) * mass.value / 12;
+    //real32 dv_ang = magnitude(force) * factor_ang / m_inertia;
+    *v += dv_lin;
+    //mov->v_ang += dv_ang;
 }
 
 void
-resolve_collision(Collision col, Mesh mesh_a, Transform *t_a, Transform t_b, Movement *mov_a, Mass m_a) {
-    v2 dv = projection(mov_a->v, col.mtv);
-    //v2 com_a = transform(center_of_mass(mesh_a), *t_a);
-    mov_a->v -= dv;
-    //v2 r = com_a - col.poi;
-    //real32 rel_torque = (r.x * mov_a->v.y - r.y * mov_a->v.x) / (r.x * r.x + mov_a->v.y * mov_a->v.y);
-    //mov_a->rot_v -= rel_torque * magnitude(dv);
-    //t_a->pos += col.mtv;
+update_velocities(Movement *movements, uint32 *masks, uint32 count, real64 d_t) {
+    static constexpr int32 MASK = (CM_Pos | CM_Velocity);
+    for (uint32 i = 1; i < count; i++) {
+        if ((masks[i] & MASK) == MASK) {
+            movements[i].v += movements[i].a * d_t;
+        }
+    }
+}
+
+void
+resolve_collision(Collision *col) {
+    // TODO: Solve infinite loop problem!
+    real32 restitution = col->mat_a.restitution * col->mat_b.restitution + EPSILON;
+    v2 momentum_a = {};
+    v2 momentum_b = {};
+    v2 reaction_a = {};
+    if (col->v_a) {
+        momentum_a = projection(*col->v_a, col->normal) * col->m_a;
+    }
+    if (col->v_b) {
+        if (abs(col->v_b->x) > EPSILON || abs(col->v_b->y) > EPSILON) {
+            momentum_b = projection(*col->v_b, col->normal) * col->m_b;
+            v2 reaction_b = (momentum_a - momentum_b) * (1 + restitution);
+            reaction_a = -reaction_b;
+            apply_impulse(col->mesh_b, col->m_b, col->p_b, col->v_b, col->poi_b, reaction_b);
+        }
+    }
+    else {
+        reaction_a = (-momentum_a) * (1 + restitution);
+    }
+    if (col->v_a)
+        apply_impulse(col->mesh_a, col->m_a, col->p_a, col->v_a, col->poi_a, reaction_a);
+}
+
+static void
+get_points_on_axis_sweeping(Mesh mesh, v2 axis, Transform t, Transform sweep_offset, AxisProjections *out) {
+    out->min = FLT_MAX;
+    out->max = -FLT_MAX;
+    for (uint32 a_i = 0; a_i < mesh.index_count; a_i++) {
+        v2 v = transform(mesh.v_buffer[mesh.i[a_i]].coord, t);
+        real32 proj = dot(v, axis);
+        v2 v_ext = transform(mesh.v_buffer[mesh.i[a_i]].coord, sweep_offset);
+        real32 proj_ext = dot(v_ext, axis);
+        if (proj < out->min) {
+            if (proj_ext < proj) {
+                out->min = proj_ext;
+                out->v_min2 = v;
+                out->v_min = v_ext;
+            } else {
+                out->min = proj;
+                out->v_min2 = proj_ext < out->min ? v_ext : out->v_min;
+                out->v_min = v;
+            }
+        }
+        else if (proj_ext < out->min) {
+            assert(proj > proj_ext);
+            out->min = proj_ext;
+            out->v_min2 = out->v_min;
+            out->v_min = v_ext;
+        }
+        if (proj > out->max) {
+            if (proj_ext > proj) {
+                out->max = proj_ext;
+                out->v_max2 = v;
+                out->v_max = v_ext;
+            } else {
+                out->max = proj;
+                out->v_max2 = proj_ext > out->max ? v_ext : out->v_max;
+                out->v_max = v;
+            }
+        }
+        else if (proj_ext > out->max) {
+            assert(proj < proj_ext);
+            out->max = proj_ext;
+            out->v_max2 = out->v_max;
+            out->v_max = v_ext;
+        }
+    }
+}
+
+static void
+get_points_on_axis(Mesh mesh, v2 axis, Transform t, AxisProjections *out) {
+    out->min = FLT_MAX;
+    out->max = -FLT_MAX;
+    for (uint32 a_i = 0; a_i < mesh.index_count; a_i++) {
+        v2 v = transform(mesh.v_buffer[mesh.i[a_i]].coord, t);
+        real32 proj = dot(v, axis);
+        if (proj < out->min) {
+            out->min = proj;
+            out->v_min2 = out->v_min;
+            out->v_min = v;
+        }
+        if (proj > out->max) {
+            out->max = proj;
+            out->v_max2 = out->v_max;
+            out->v_max = v;
+        }
+    }
+}
+
+static void
+calculate_normals(uint32 count, v2 *vertices, v2 *normals) {
+    for (uint32 i = 0; i < count; i++) {
+        uint32 i_next = i < count-1 ? i+1 : 0;
+        normals[i] = rnormal(vertices[i_next] - vertices[i]);
+    }
 }
 

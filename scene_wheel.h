@@ -1,29 +1,60 @@
 #ifndef SCENE_WHEEL_H
 
-#include <string.h>
-
 #include "physics_wheel.h"
 #include "render_wheel.h"
 #include "memory_wheel.h"
 
-typedef enum {
-    CM_Pos              = 1 <<  0,
-    CM_Rotation         = 1 <<  1,
-    CM_Mesh             = 1 <<  2,
-    CM_Color            = 1 <<  3,
-    CM_Velocity         = 1 <<  4,
-    CM_Force            = 1 <<  5,
-    CM_Mass             = 1 <<  6,
-    CM_Friction         = 1 <<  7,
-    CM_Collision        = 1 <<  8,
-    CM_BoxCollider      = 1 <<  9,
-    CM_Texture          = 1 << 10,
-    CM_Selectable       = 1 << 11
-} ComponentMask; 
+struct DebugGrid {
+    v4 bg_color;
+    v4 primary_color;
+    v4 secondary_color;
+    v4 accent_color;
+    v2 origin;
+    v2 scale;
+};
 
+#if NEW_PHYSICS_SYSTEM
 struct Scene {
     Camera camera;
+    DebugGrid grid;
+    Physics physics;
     uint32 player_index;
+    uint32 floor_index;
+    v2 player_movement;
+    uint32 hovered_entity;
+    uint32 selected_entity; // TODO: turn this into a list(?)
+    real64 scene_time;
+    bool paused;
+    v2 *vertices;
+    v2 *normals;
+    //Vertexbuffer *vertexbuffer;
+    //Indexbuffer *indexbuffer;
+    // Collisions
+    uint32 collision_count;
+    Collision *collisions; // TODO: probably a linked list?
+    // Entities
+    uint32 entity_count;
+    uint32 max_entity_count;
+    uint32 *entities;
+    //Transform *transforms;
+    //Transform *predicted_transforms;
+    //Movement *movements;
+    //Movement *predicted_movements;
+    //Friction *frictions;
+    //Material *materials;
+    //Mesh *meshes;
+    //Texture *textures;
+    //v4 *colors;
+    //real32 *forces;
+    //Mass *masses;
+    //Collision *predicted_collisions;
+};
+#else
+struct Scene {
+    Camera camera;
+    DebugGrid grid;
+    uint32 player_index;
+    uint32 floor_index;
     v2 player_movement;
     uint32 hovered_entity;
     uint32 selected_entity; // TODO: turn this into a list(?)
@@ -31,6 +62,9 @@ struct Scene {
     bool paused;
     Vertexbuffer *vertexbuffer;
     Indexbuffer *indexbuffer;
+    // Collisions
+    uint32 collision_count;
+    Collision *collisions; // TODO: probably a linked list?
     // Entities
     uint32 entity_count;
     uint32 max_entity_count;
@@ -39,27 +73,28 @@ struct Scene {
     Transform *predicted_transforms;
     Movement *movements;
     Movement *predicted_movements;
+    //Friction *frictions;
+    Material *materials;
     Mesh *meshes;
     Texture *textures;
     v4 *colors;
     real32 *forces;
     Mass *masses;
-    real32 *frictions;
-    Collision *collisions;
     Collision *predicted_collisions;
 };
+#endif
 
 void
 handle_collisions(Scene *scene, real64 d_t);
+
+void
+draw_scene(Scene *scene, Framebuffer fb);
 
 void
 draw_entities(Scene *scene, Framebuffer fb);
 
 uint32
 add_entity(Scene *scene, uint32 mask);
-
-void
-update_velocities(Scene *scene, real64 d_t);
 
 void
 update_transforms(Scene *scene, real64 d_t);

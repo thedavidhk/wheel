@@ -14,19 +14,13 @@ static void
 debug_draw_flat_bottom_triangle(Framebuffer fb, const v2 *p, v4 color);
 
 static void
-draw_line(Framebuffer fb, v2 a, v2 b, v4 color);
-
-static void
 draw_triangle_wireframe(Framebuffer fb, v2 *p, v4 color, uint32 thickness);
 
 static void
-draw_line(Framebuffer fb, v2 a, v2 b, v4 color, uint32 thickness);
+draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture, v4 *solid_color);
 
 static void
-draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture);
-
-static void
-draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture);
+draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture, v4 *solid_color);
 
 static void
 vertex_shader(Vertex v, Camera camera, Transform transform, v2 *screen_pos, v4 *color, v2 *tex_coord);
@@ -51,7 +45,8 @@ draw_string_to_texture(Texture *texture, const char *str, Font f, v4 color) {
             uint32 start_y = f.cheight * (((*str - f.ascii_offset) * f.cwidth) / f.bitmap.width);
             for (uint32 y = 0; y < f.cheight; y++) {
                 for (uint32 x = 0; x < f.cwidth; x++) {
-                    texture->pixels[x + x_offset + (y + line_offset * f.cheight) * texture->width] = f.bitmap.pixels[start_x + x + (start_y + y) * f.bitmap.width];
+                    v4 col = hadamard(color,pixel_to_color(f.bitmap.pixels[start_x + x + (start_y + y) * f.bitmap.width]));
+                    texture->pixels[x + x_offset + (y + line_offset * f.cheight) * texture->width] = color_to_pixel(col);
                 }
             }
             x_offset += f.cwidth;
@@ -161,52 +156,51 @@ debug_draw_vector(Framebuffer fb, v2 v, v2 offset, v4 color) {
 }
 
 void
-draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c, Texture *texture) {
+draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c, Texture *texture, v4 *color) {
     v2 pos[3];
-    v4 col[3];
+    v4 vcolor[3];
     v2 tex_coord[3];
-    vertex_shader(v[0], c, t, &pos[0], &col[0], &tex_coord[0]);
-    vertex_shader(v[1], c, t, &pos[1], &col[1], &tex_coord[1]);
-    vertex_shader(v[2], c, t, &pos[2], &col[2], &tex_coord[2]);
+    vertex_shader(v[0], c, t, &pos[0], &vcolor[0], &tex_coord[0]);
+    vertex_shader(v[1], c, t, &pos[1], &vcolor[1], &tex_coord[1]);
+    vertex_shader(v[2], c, t, &pos[2], &vcolor[2], &tex_coord[2]);
     if (pos[0].y > pos[2].y) {
         v2 temp_pos = pos[0];
         v2 temp_tex_coord = tex_coord[0];
-        v4 temp_col = col[0];
+        v4 temp_vcolor = vcolor[0];
         pos[0] = pos[2];
         tex_coord[0] = tex_coord[2];
-        col[0] = col[2];
+        vcolor[0] = vcolor[2];
         pos[2] = temp_pos;
         tex_coord[2] = temp_tex_coord;;
-        col[2] = temp_col;
+        vcolor[2] = temp_vcolor;
     }
     if (pos[0].y > pos[1].y) {
         v2 temp_pos = pos[0];
         v2 temp_tex_coord = tex_coord[0];
-        v4 temp_col = col[0];
+        v4 temp_vcolor = vcolor[0];
         pos[0] = pos[1];
         tex_coord[0] = tex_coord[1];
-        col[0] = col[1];
+        vcolor[0] = vcolor[1];
         pos[1] = temp_pos;
         tex_coord[1] = temp_tex_coord;;
-        col[1] = temp_col;
+        vcolor[1] = temp_vcolor;
     }
     if (pos[1].y > pos[2].y) {
         v2 temp_pos = pos[1];
         v2 temp_tex_coord = tex_coord[1];
-        v4 temp_col = col[1];
+        v4 temp_vcolor = vcolor[1];
         pos[1] = pos[2];
         tex_coord[1] = tex_coord[2];
-        col[1] = col[2];
+        vcolor[1] = vcolor[2];
         pos[2] = temp_pos;
         tex_coord[2] = temp_tex_coord;;
-        col[2] = temp_col;
+        vcolor[2] = temp_vcolor;
     }
-
     if (round(pos[1].y) == round(pos[2].y)) {
-        draw_flat_bottom_triangle(fb, pos, col, tex_coord, texture);
+        draw_flat_bottom_triangle(fb, pos, vcolor, tex_coord, texture, color);
     }
     else if (round(pos[0].y) == round(pos[1].y)) {
-        draw_flat_top_triangle(fb, pos, col, tex_coord, texture);
+        draw_flat_top_triangle(fb, pos, vcolor, tex_coord, texture, color);
     }
     else {
         v2 split = {pos[0].x + (pos[1].y - pos[0].y) * (pos[2].x - pos[0].x) / (pos[2].y - pos[0].y), pos[1].y};
@@ -214,22 +208,22 @@ draw_triangle(Framebuffer fb, Vertex *v, Transform t, Camera c, Texture *texture
         real32 c0 = det(split, pos[1], pos[2]) / area2;
         real32 c1 = det(split, pos[2], pos[0]) / area2;
         real32 c2 = 1.0f - c0 - c1;
-        v4 split_col = c0 * col[0] + c1 * col[1] + c2 * col[2];
+        v4 split_vcolor = c0 * vcolor[0] + c1 * vcolor[1] + c2 * vcolor[2];
         v2 split_tex_coord = c0 * tex_coord[0] + c1 * tex_coord[1] + c2 * tex_coord[2];
         v2 temp_pos = pos[2];
-        v4 temp_col = col[2];
+        v4 temp_vcolor = vcolor[2];
         v2 temp_tex_coord = tex_coord[2];
         pos[2] = split;
-        col[2] = split_col;
+        vcolor[2] = split_vcolor;
         tex_coord[2] = split_tex_coord;
-        draw_flat_bottom_triangle(fb, pos, col, tex_coord, texture);
+        draw_flat_bottom_triangle(fb, pos, vcolor, tex_coord, texture, color);
         pos[2] = temp_pos;
-        col[2] = temp_col;
+        vcolor[2] = temp_vcolor;
         tex_coord[2] = temp_tex_coord;
         pos[0] = split;
-        col[0] = split_col;
+        vcolor[0] = split_vcolor;
         tex_coord[0] = split_tex_coord;
-        draw_flat_top_triangle(fb, pos, col, tex_coord, texture);
+        draw_flat_top_triangle(fb, pos, vcolor, tex_coord, texture, color);
     }
 }
 
@@ -255,13 +249,13 @@ debug_draw_triangle(Framebuffer fb, v2 *p, v4 color) {
 }
 
 void
-draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture *texture) {
+draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture *texture, v4 *color) {
     for (uint32 i = 0; i < mesh.index_count; i += 3) {
         Vertex tri[3];
         tri[0] = mesh.v_buffer[mesh.i[i + 0]];
         tri[1] = mesh.v_buffer[mesh.i[i + 1]];
         tri[2] = mesh.v_buffer[mesh.i[i + 2]];
-        draw_triangle(fb, tri, t, camera, texture);
+        draw_triangle(fb, tri, t, camera, texture, color);
     }
 }
 
@@ -295,7 +289,7 @@ debug_draw_point(Framebuffer fb, v2 p, real32 radius, v4 color) {
     }
 }
 
-static void
+void
 draw_line(Framebuffer fb, v2 a, v2 b, v4 color) {
     real32 dx = a.x - b.x;
     real32 dy = a.y - b.y;
@@ -321,7 +315,7 @@ draw_triangle_wireframe(Framebuffer fb, v2 *p, v4 color, uint32 thickness) {
     draw_line(fb, p[2], p[0], color, thickness);
 }
 
-static void
+void
 draw_line(Framebuffer fb, v2 a, v2 b, v4 color, uint32 thickness) {
     if (thickness < 1)
         return;
@@ -368,15 +362,18 @@ debug_draw_flat_bottom_triangle(Framebuffer fb, const v2 *p, v4 color) {
 
 
 static void
-draw_fragment(Framebuffer fb, uint32 x, uint32 y, v2 *pos, v4 *color, Texture *texture, v2 *tex_coord, real32 area2) {
+draw_fragment(Framebuffer fb, uint32 x, uint32 y, v2 *pos, v4 *vcolor, Texture *texture, v2 *tex_coord, real32 area2, v4 *solid_color) {
     v2 p = {(real32) x, (real32) y};
     real32 c0 = det(p, pos[1], pos[2]) / area2;
     real32 c1 = det(p, pos[2], pos[0]) / area2;
     real32 c2 = 1.0f - c0 - c1;
-    if ((c0 - 1) * c0 <= 0 && (c1 - 1) * c1 <= 0 && (c2 - 1) * c2 <= 0) {
-        v4 fg_color;
-        if (color) {
-            fg_color = c0 * color[0] + c1 * color[1] + c2 * color[2];
+    v4 fg_color;
+    if (solid_color) {
+        fg_color = *solid_color;
+    }
+    else if ((c0 - 1) * c0 <= 0 && (c1 - 1) * c1 <= 0 && (c2 - 1) * c2 <= 0) {
+        if (vcolor) {
+            fg_color = c0 * vcolor[0] + c1 * vcolor[1] + c2 * vcolor[2];
         }
         if (texture) {
             v2 uv = c0 * tex_coord[0] + c1 * tex_coord[1] + c2 * tex_coord[2];
@@ -385,14 +382,14 @@ draw_fragment(Framebuffer fb, uint32 x, uint32 y, v2 *pos, v4 *color, Texture *t
             uint32 v = round(uv.y * shortest_side);
             fg_color = color_blend(pixel_to_color(texture->pixels[u + v * texture->width]), fg_color);
         }
-        uint32 *old = &fb.data[x + y * fb.width];
-        v4 old_c = pixel_to_color(*old);
-        *old = color_to_pixel(fragment_shader(fg_color, old_c));
     }
+    uint32 *old = &fb.data[x + y * fb.width];
+    v4 old_c = pixel_to_color(*old);
+    *old = color_to_pixel(fragment_shader(old_c, fg_color));
 }
 
 static void
-draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture) {
+draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture, v4 *solid_color) {
     assert(pos[0].y < pos[1].y && pos[0].y < pos[2].y);
     assert(round(pos[1].y) == round(pos[2].y));
     v2 p_l = pos[1].x < pos[2].x ? pos[1] : pos[2];
@@ -405,7 +402,7 @@ draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Tex
     for (int32 y = pos[0].y; y <= min(p_l.y, fb.height - 1); y++) {
         if (y >= 0) {
             for (int32 x = max(0, x_l); x <= min(fb.width - 1, x_r - 1); x++) {
-                draw_fragment(fb, x, y, pos, color, texture, tex_coord, area2);
+                draw_fragment(fb, x, y, pos, color, texture, tex_coord, area2, solid_color);
             }
         }
         x_l += dx_l;
@@ -414,7 +411,7 @@ draw_flat_bottom_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Tex
 }
 
 static void
-draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture) {
+draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Texture *texture, v4 *solid_color) {
     assert(pos[2].y > pos[0].y && pos[2].y > pos[1].y);
     assert(round(pos[0].y) == round(pos[1].y));
     v2 p_l = pos[0].x < pos[1].x ? pos[0] : pos[1];
@@ -427,7 +424,7 @@ draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Textur
     for (int32 y = p_l.y; y <= min(pos[2].y, fb.height - 1); y++) {
         if (y >= 0) {
             for (int32 x = max(0, x_l); x <= min(fb.width - 1, x_r - 1); x++) {
-                draw_fragment(fb, x, y, pos, color, texture, tex_coord, area2);
+                draw_fragment(fb, x, y, pos, color, texture, tex_coord, area2, solid_color);
             }
         }
         x_l += dx_l;

@@ -41,6 +41,7 @@ create_rectangle(Vertexbuffer *vb, Indexbuffer *ib, v2 min, v2 max, v4 color) {
 
 v2
 center_of_mass(Mesh mesh) {
+// TODO: This is wrong! We should only count every vertex once!
     v2 sum = {};
     uint32 i;
     for (i = 0; i < mesh.index_count; i++) {
@@ -51,7 +52,12 @@ center_of_mass(Mesh mesh) {
 
 v2
 transform(v2 v, Transform t) {
-    return rotate(v, {0, 0}, t.rot) + t.pos;
+    return rotate(hadamard(v, t.scale), {0, 0}, t.rot) + t.pos;
+}
+
+v2
+world_to_object_space(v2 v, Transform t) {
+    return hadamard(rotate(v - t.pos, {0, 0}, -t.rot), 1/t.scale);
 }
 
 bool

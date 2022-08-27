@@ -27,6 +27,12 @@ struct Font {
 };
 
 void
+draw_line(Framebuffer fb, v2 a, v2 b, v4 color);
+
+void
+draw_line(Framebuffer fb, v2 a, v2 b, v4 color, uint32 thickness);
+
+void
 clear_framebuffer(Framebuffer fb, v4 color);
 
 void
@@ -36,10 +42,7 @@ void
 debug_draw_triangle(Framebuffer fb, v2 *p, v4 color);
 
 void
-draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture *texture);
-
-void
-draw_mesh_textured(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture texture);
+draw_mesh(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, Texture *texture, v4 *color);
 
 void
 draw_mesh_wireframe(const Camera &camera, Framebuffer fb, Mesh mesh, Transform t, v4 color, uint32 thickness);

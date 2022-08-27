@@ -1,6 +1,7 @@
 #ifndef MEMORY_WHEEL_H
 
 #include <stdio.h>
+#include <string.h>
 
 struct AppMemory {
     uint64 size;

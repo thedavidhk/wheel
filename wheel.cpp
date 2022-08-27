@@ -1,46 +1,23 @@
 #include <stdio.h>  // for printf (debug only)
 
+// TODO:
+// 
+// - What is the app about?
+// - What do I need?
+
 #include "wheel.h"
+#include "files_wheel.h"
 #include "scene_wheel.h"
 
 struct AppState {
     Scene *current_scene;
     Texture testimg;
-    Texture string_texture;
     Font test_font;
     real64 app_time;
     int32 mouse_x;
     int32 mouse_y;
     uint32 frame_count;
     uint32 fps;
-};
-
-static Texture
-load_bmp_file(const char* filename, AppMemory *mem) {
-    Texture f;
-    FILE *ptr;
-    ptr = fopen(filename, "rb");
-    if (!ptr) {
-        printf("File %s could not be opened.\n", filename);
-        exit(1);
-    }
-    uint8 header[26];
-    if (!fread(header, 1, 26, ptr)) {
-        printf("File %s could not be read.\n", filename);
-        exit(1);
-    }
-    // TODO: More careful compatibility checking
-    uint32 fsize = *(uint32 *)(header + 2);
-    uint32 offset = *(uint32 *)(header + 10);
-    f.width = *(uint32 *)(header + 18);
-    f.height = *(uint32 *)(header + 22);
-    f.bytes = (uint8 *)get_memory(mem, (fsize - offset));
-    fseek(ptr, offset, SEEK_SET);
-    for (uint32 y = f.height; y > 0; y--) {
-        fread(f.pixels + (y - 1) * f.width, 4, f.width, ptr);
-    }
-    fclose(ptr);
-    return f;
 };
 
 static Font
@@ -93,12 +70,11 @@ initialize_app() {
     Scene *scene = initialize_scene(mem);
     as->current_scene = scene;
 
+#if NEW_PHYSICS_SYSTEM == 0
     // DEBUG
     as->testimg = load_bmp_file("test.bmp", mem);
     as->test_font = load_bitmap_font("source_sans_pro.bmp", mem, 38, 64, 32);
-    const char *string = "Hi,\nThis is David.";
-    as->string_texture = create_string_texture(string, mem, as->test_font, {1, 1, 1, 1});
-    //
+    //const char *string = "Hi,\nThis is David.";
 
 
     Vertexbuffer *vb = scene->vertexbuffer;
@@ -107,10 +83,16 @@ initialize_app() {
     // Initialize player.
     constexpr uint32 count_v = 4;
     Vertex data[count_v] = {
-        {{-3.0, -0.5}, {1, 0, 0, 1}, {0, 0}},
-        {{ 3.0, -0.5}, {0, 1, 0, 1}, {6, 0}},
-        {{ 3.0,  0.5}, {0, 0, 1, 1}, {6, 1}},
-        {{-3.0,  0.5}, {0, 0, 0, 0}, {0, 1}}
+        {{-0.2, -0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 0}},
+        {{ 0.2, -0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 0}},
+        {{ 0.2,  0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 1}},
+        {{-0.2,  0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 1}}
+    };
+    Vertex floor_data[count_v] = {
+        {{-2.5, -0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 0}},
+        {{ 2.5, -0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 0}},
+        {{ 2.5,  0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 1}},
+        {{-2.5,  0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 1}}
     };
     //Vertex data[count_v] = {
     //    {-0.5, -0.5},
@@ -124,14 +106,17 @@ initialize_app() {
 
     int32 scenery_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Rotation;
 
-    uint32 floor = add_entity(scene, scenery_mask | CM_Texture);
-    scene->transforms[floor].pos = {0, 0};
-    scene->transforms[floor].rot = 20 * PI / 180.0;
-    //scene->transforms[floor].scale = {0.2, 0.3};
-    scene->colors[floor] = {0.4, 0.2, 0.2, 0.8};
-    scene->textures[floor] = as->string_texture;
-    //scene->meshes[floor] = create_rectangle(vb, ib, {-3, -0.5}, {3, 0.5}, scene->colors[floor]);
-    scene->meshes[floor] = create_polygon(vb, ib, data, count_v, indices, count_i);
+    //uint32 floor = add_entity(scene, scenery_mask | CM_Texture);
+    uint32 floor = add_entity(scene, scenery_mask);
+    scene->transforms[floor].pos = {0, 2};
+    scene->transforms[floor].rot = 0.0;
+    scene->transforms[floor].scale = {1, 1};
+    scene->colors[floor] = {0.8, 0.4, 0.4, 0.5};
+    scene->movements[floor] = {};
+    //scene->textures[floor] = create_string_texture(string, mem, as->test_font, {1, 0.5, 1, 1});
+    scene->meshes[floor] = create_polygon(vb, ib, floor_data, count_v, indices, count_i);
+    scene->materials[floor] = {2, 3, 0.5};
+    scene->floor_index = floor;
 
 
     /*
@@ -139,27 +124,28 @@ initialize_app() {
     scene->transforms[wall].pos = {1, 1};
     scene->colors[wall] = {0.3, 0.7, 1, 0.8};
     scene->meshes[wall] = create_polygon(vb, ib, data, count_v, indices, count_i);
+    */
 
     int32 moveable_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Velocity | CM_Mass | CM_Friction;
     uint32 pebble = add_entity(scene, moveable_mask);
-    scene->transforms[pebble].pos = {6, -1};
-    scene->colors[pebble] = {0.3, 0.7, 0.2, 0.8};
+    scene->transforms[pebble].pos = {-2, 1};
+    scene->transforms[pebble].rot = 45 * PI / 180;
+    scene->transforms[pebble].scale = {1, 1};
+    scene->colors[pebble] = {1, 1, 1, 0.5};
     scene->meshes[pebble] = create_polygon(vb, ib, data, count_v, indices, count_i);
-    scene->movements[pebble].v = {-10, 0};
     scene->masses[pebble].value = 1;
-    scene->frictions[pebble] = 1;
+    scene->materials[scene->player_index] = {2, 3, 0.5};
 
-    int32 player_mask = CM_Pos | CM_Mesh | CM_Color | CM_Velocity | CM_Force | CM_Mass | CM_Friction | CM_Collision | CM_Rotation;
+    int32 player_mask = CM_Pos | CM_Mesh | CM_Color | CM_Velocity | CM_Force | CM_Mass | CM_Friction | CM_Collision | CM_Rotation | CM_Selectable;
     scene->player_index = add_entity(scene, player_mask);
-    scene->transforms[scene->player_index].rot = 0.3;
-    scene->colors[scene->player_index] = {1, 0.7, 0.3, 0.8};
     scene->meshes[scene->player_index] = create_polygon(vb, ib, data, count_v, indices, count_i);
-    scene->forces[scene->player_index] = 2;
+    scene->transforms[scene->player_index].scale = {1, 1};
+    scene->forces[scene->player_index] = 5;
     scene->masses[scene->player_index].value = 1;
-    scene->frictions[scene->player_index] = 1;
-    */
+    scene->colors[scene->player_index] = {1, 1, 1, 0.5};
+    scene->materials[scene->player_index] = {2, 3, 0.5};
 
-    scene_reset_predictions(scene);
+#endif
 
     return (AppHandle)mem;
 }
@@ -174,46 +160,23 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
     real64 time_left = frame_time;
     while (time_left > 0.0) {
         real64 d_t = min(frame_time, 1.0d / SIM_RATE);
-        uint32 p = scene->player_index;
-#if 0
-        update_velocities(scene, d_t);
-        handle_collisions(scene, d_t);
+        //uint32 f = scene->floor_index;
+
         if (!scene->paused) {
-            update_transforms(scene, d_t);
-        }
-#else
-        if (!scene->paused) {
-            //scene_reset_predictions(scene);
-            accelerate(scene->player_movement, 1.0f * scene->forces[p], scene->masses[p].value, &scene->movements[p], d_t);
-            update_velocities(scene, d_t);
+            //scene->transforms[f].rot = 10.0f * (PI / 180) * sin((real32)scene->scene_time);
+            //accelerate(scene->player_movement, 1.0f * scene->forces[p], scene->masses[p].value, &scene->movements[p], d_t);
+            apply_external_forces(scene->movements, scene->materials, scene->collisions, scene->entities, scene->entity_count, d_t);
+            update_velocities(scene->movements, scene->entities, scene->entity_count, d_t);
             handle_collisions(scene, d_t);
             update_transforms(scene, d_t);
+            scene->scene_time += d_t;
         }
-#endif
         time_left -= d_t;
     }
 
     // RENDER
     clear_framebuffer(fb, {0});
-    draw_entities(scene, fb);
-
-
-
-    //DEBUG bitmaps
-
-    //debug_draw_texture_alpha(as->testimg, fb, 20, 20);
-    //debug_draw_texture_alpha(as->string_texture, fb, 200, 200);
-
-
-    //draw_entities_wireframe(scene, fb);
-    /*
-    uint32 h = scene->hovered_entity;
-    if (h)
-        highlight_entity(scene, fb, h);
-    uint32 s = scene->selected_entity;
-    if (s)
-        highlight_entity(scene, fb, s);
-    */
+    draw_scene(scene, fb);
 
     as->app_time += frame_time;
     as->frame_count++;
@@ -239,7 +202,7 @@ key_callback(KeyBoardInput key, InputType t, AppHandle app) {
     AppState *as = (AppState *)(((AppMemory *)app)->data);
     Scene *scene = as->current_scene;
     v2 dir = {};
-    int32 mag = 2 * (t == IT_PRESSED) - 1;
+    int32 mag = (t == IT_PRESSED);
     switch (key) {
         case KEY_W:
             dir += mag * v2{ 0,-1};
@@ -255,14 +218,19 @@ key_callback(KeyBoardInput key, InputType t, AppHandle app) {
             break;
         case KEY_SPACE:
             if (t == IT_PRESSED) {
-                printf("Scene paused.\n");
                 scene->paused = !scene->paused;
+                if (scene->paused)
+                    printf("Scene paused.\n");
+                else
+                    printf("Scene resumed.\n");
             }
             break;
         default:
             break;
     }
-    scene->player_movement += dir;
+    if (magnitude(dir) > EPSILON)
+        apply_impulse(scene->meshes[scene->player_index], scene->masses[scene->player_index].value, scene->transforms[scene->player_index].pos, &scene->movements[scene->player_index].v, center_of_mass(scene->meshes[scene->player_index]), dir * scene->forces[scene->player_index]);
+    //scene->player_movement += dir;
 }
 
 void

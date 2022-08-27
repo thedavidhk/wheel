@@ -224,6 +224,16 @@ magnitude(v2 v) {
 }
 
 inline v2
+rnormal(v2 v) {
+    return v2{v.y, -v.x};
+}
+
+inline v2
+lnormal(v2 v) {
+    return -rnormal(v);
+}
+
+inline v2
 rnormal(Line l) {
     return v2{l.a.y - l.b.y, l.b.x - l.a.x};
 }
@@ -373,6 +383,16 @@ normalize(v2 v) {
 inline v2
 projection(v2 a, v2 b) {
     return b * dot(a, b) / dot(b, b);
+}
+
+inline v2
+hadamard(v2 a, v2 b) {
+    return v2{a.x * b.x, a.y * b.y};
+}
+
+inline v4
+hadamard(v4 a, v4 b) {
+    return v4{a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w};
 }
 
 inline v2
