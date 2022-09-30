@@ -14,11 +14,8 @@ get_points_on_axis_sweeping(Mesh mesh, v2 axis, Transform t, Transform sweep_off
 static void
 get_points_on_axis(Mesh mesh, v2 axis, Transform t, AxisProjections *out);
 
-static void
-calculate_normals(uint32 count, v2 *vertices, v2 *normals);
-
 uint32
-body_create(Physics *system, BodyDef def) {
+physics_create_body(BodyList *list, BodyDef def) {
     Body body;
     body.p = def.p;
     body.v = def.v;
@@ -32,33 +29,9 @@ body_create(Physics *system, BodyDef def) {
     else {
         body.m_inv = 0;
     }
-    assert(system->body_count < MAX_BODY_COUNT);
-    system->bodies[system->body_count] = body;
-    return system->body_count++;
-}
-
-uint32
-shape_create_circle(Physics *system, v2 center, real32 radius) {
-    Shape shape;
-    shape.type = ST_CIRCLE;
-    shape.circle.center = center;
-    shape.circle.radius = radius;
-    assert(system->shape_count < MAX_SHAPE_COUNT);
-    system->shapes[system->shape_count] = shape;
-    return system->shape_count++;
-}
-
-uint32
-shape_create_polygon(Physics *system, uint32 count, v2 *vertices, v2 *normals) {
-    assert(count <= MAX_POLYGON_VERTICES);
-    Shape shape;
-    shape.type = ST_POLYGON;
-    shape.polygon.count = count;
-    calculate_normals(count, vertices, normals);
-    shape.polygon.vertices = vertices;
-    shape.polygon.normals = normals;
-    system->shapes[system->shape_count] = shape;
-    return system->shape_count++;
+    assert(list->count < MAX_BODY_COUNT);
+    list->bodies[list->count] = body;
+    return list->count++;
 }
 
 #if NEW_PHYSICS_SYSTEM
@@ -274,31 +247,6 @@ update_velocities(Movement *movements, uint32 *masks, uint32 count, real64 d_t) 
     }
 }
 
-void
-resolve_collision(Collision *col) {
-    // TODO: Solve infinite loop problem!
-    real32 restitution = col->mat_a.restitution * col->mat_b.restitution + EPSILON;
-    v2 momentum_a = {};
-    v2 momentum_b = {};
-    v2 reaction_a = {};
-    if (col->v_a) {
-        momentum_a = projection(*col->v_a, col->normal) * col->m_a;
-    }
-    if (col->v_b) {
-        if (abs(col->v_b->x) > EPSILON || abs(col->v_b->y) > EPSILON) {
-            momentum_b = projection(*col->v_b, col->normal) * col->m_b;
-            v2 reaction_b = (momentum_a - momentum_b) * (1 + restitution);
-            reaction_a = -reaction_b;
-            apply_impulse(col->mesh_b, col->m_b, col->p_b, col->v_b, col->poi_b, reaction_b);
-        }
-    }
-    else {
-        reaction_a = (-momentum_a) * (1 + restitution);
-    }
-    if (col->v_a)
-        apply_impulse(col->mesh_a, col->m_a, col->p_a, col->v_a, col->poi_a, reaction_a);
-}
-
 static void
 get_points_on_axis_sweeping(Mesh mesh, v2 axis, Transform t, Transform sweep_offset, AxisProjections *out) {
     out->min = FLT_MAX;
@@ -362,14 +310,6 @@ get_points_on_axis(Mesh mesh, v2 axis, Transform t, AxisProjections *out) {
             out->v_max2 = out->v_max;
             out->v_max = v;
         }
-    }
-}
-
-static void
-calculate_normals(uint32 count, v2 *vertices, v2 *normals) {
-    for (uint32 i = 0; i < count; i++) {
-        uint32 i_next = i < count-1 ? i+1 : 0;
-        normals[i] = rnormal(vertices[i_next] - vertices[i]);
     }
 }
 

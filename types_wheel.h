@@ -1,5 +1,7 @@
 #ifndef TYPES_WHEEL_H
 
+#include <stdio.h>
+
 #define int8 char
 #define int16 short
 #define int32 int

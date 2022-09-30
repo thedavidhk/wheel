@@ -25,11 +25,61 @@ draw_flat_top_triangle(Framebuffer fb, v2 *pos, v4 *color, v2 *tex_coord, Textur
 static void
 vertex_shader(Vertex v, Camera camera, Transform transform, v2 *screen_pos, v4 *color, v2 *tex_coord);
 
+static v2
+object_to_screen_space(v2 v, Camera c, v2 p, real32 ang);
+
 static v4
 fragment_shader(v4 fg_color, v4 bg_color);
 
 static int
 vertex_compare_pos_y(const void *a, const void *b);
+
+void
+renderer_draw_shape_to_buffer(Framebuffer fb, Camera c, Shape shape, v2 p, real32 p_ang) {
+    // TODO: This only draws polygons!
+    BoundingBox b = shape_get_bounding_box(shape, p_ang);
+    v2 start = object_to_screen_space(b.min, c, p, 0);
+    v2 end = object_to_screen_space(b.max, c, p, 0);
+    v2 vertices_screen[MAX_VERTICES_PER_SHAPE];
+    v2 normals_screen[MAX_VERTICES_PER_SHAPE];
+    assert(shape.polygon.count < MAX_VERTICES_PER_SHAPE);
+    // Convert vertices and normals to screen space
+    for (uint32 i = 0; i < shape.polygon.count; i++) {
+        vertices_screen[i] = object_to_screen_space(shape.polygon.vertices[i], c, p, p_ang);
+        normals_screen[i] = rotate(shape.polygon.normals[i], {0, 0}, p_ang);
+    }
+    uint32 width = (uint32)(end.x - start.x);
+    uint32 height = (uint32)(end.y - start.y);
+    for (uint32 y = 0; y < height; y++) {
+        uint32 pixel_y = (uint32)start.y + y;
+        if (pixel_y >= c.height) {
+            continue;
+        }
+        if (pixel_y >= 0) {
+            for (uint32 x = 0; x < width; x++) {
+                uint32 pixel_x = (uint32)start.x + x;
+                if (pixel_x >= c.width) {
+                    continue;
+                }
+                if (pixel_x >= 0) {
+                    bool contains = true;
+                    uint32 v_index = 0;
+                    v2 point = {(real32) pixel_x, (real32) pixel_y};
+                    while (contains && v_index < shape.polygon.count) {
+                        real32 dot_product = dot(point - vertices_screen[v_index], normals_screen[v_index]);
+                        if (dot_product > 0) {
+                            contains = false;
+                        }
+                        v_index++;
+                    }
+                    if (contains) {
+                        fb.data[pixel_x + c.width * pixel_y] = 0xFF605854;
+                    }
+                }
+            }
+        }
+    }
+}
 
 void
 draw_string_to_texture(Texture *texture, const char *str, Font f, v4 color) {
@@ -478,5 +528,16 @@ vertex_compare_pos_y(const void *a, const void *b) {
         return -1;
     else
         return 0;
+}
+
+static v2
+object_to_screen_space(v2 v, Camera c, v2 p, real32 ang) {
+    v2 result = rotate(v, {0, 0}, ang);
+    result += p; // Now we are in world space
+    result -= c.pos;
+    result *= c.scale;
+    v2 screen_center = 0.5 * v2{(real32)c.width, (real32)c.height};
+    result += screen_center;
+    return result;
 }
 

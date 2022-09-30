@@ -63,89 +63,29 @@ create_string_texture(const char* str, AppMemory *mem, Font f, v4 color) {
 AppHandle
 initialize_app() {
     // TODO: This is completely arbitrary!
-    static constexpr uint32 mem_size = megabytes(64);
+    static constexpr uint32 mem_size = megabytes(1);
     AppMemory *mem = initialize_memory(mem_size);
 
     AppState *as = (AppState *)get_memory(mem, sizeof(AppState));
     Scene *scene = initialize_scene(mem);
     as->current_scene = scene;
 
-#if NEW_PHYSICS_SYSTEM == 0
-    // DEBUG
-    as->testimg = load_bmp_file("test.bmp", mem);
-    as->test_font = load_bitmap_font("source_sans_pro.bmp", mem, 38, 64, 32);
-    //const char *string = "Hi,\nThis is David.";
-
-
-    Vertexbuffer *vb = scene->vertexbuffer;
-    Indexbuffer *ib = scene->indexbuffer;
-
-    // Initialize player.
-    constexpr uint32 count_v = 4;
-    Vertex data[count_v] = {
-        {{-0.2, -0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 0}},
-        {{ 0.2, -0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 0}},
-        {{ 0.2,  0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 1}},
-        {{-0.2,  0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 1}}
+    uint32 player = scene_create_entitiy(scene);
+    v2 poly_def[4] = {
+        {-0.5, -0.5},
+        {-0.5,  0.5},
+        { 0.5,  0.5},
+        { 0.5, -0.5}
     };
-    Vertex floor_data[count_v] = {
-        {{-2.5, -0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 0}},
-        {{ 2.5, -0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 0}},
-        {{ 2.5,  0.2}, {0.3, 0.3, 0.3, 0.3}, {6, 1}},
-        {{-2.5,  0.2}, {0.3, 0.3, 0.3, 0.3}, {0, 1}}
-    };
-    //Vertex data[count_v] = {
-    //    {-0.5, -0.5},
-    //    { 0.5, -0.3},
-    //    {-0.5,  0.5}
-    //};
-    constexpr uint32 count_i = 6;
-    uint32 indices[count_i] = {
-        0, 1, 2, 0, 2, 3
-    };
+    uint32 poly = scene_create_polygon(scene, 4, poly_def);
+    BodyDef body_def = {0};
+    body_def.p = {-1, 0};
+    body_def.m = 5;
+    uint32 body = scene_create_body(scene, body_def);
+    scene_link_shape_to_body(scene, poly, body);
+    scene_link_body_to_entity(scene, body, player);
 
-    int32 scenery_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Rotation;
-
-    //uint32 floor = add_entity(scene, scenery_mask | CM_Texture);
-    uint32 floor = add_entity(scene, scenery_mask);
-    scene->transforms[floor].pos = {0, 2};
-    scene->transforms[floor].rot = 0.0;
-    scene->transforms[floor].scale = {1, 1};
-    scene->colors[floor] = {0.8, 0.4, 0.4, 0.5};
-    scene->movements[floor] = {};
-    //scene->textures[floor] = create_string_texture(string, mem, as->test_font, {1, 0.5, 1, 1});
-    scene->meshes[floor] = create_polygon(vb, ib, floor_data, count_v, indices, count_i);
-    scene->materials[floor] = {2, 3, 0.5};
-    scene->floor_index = floor;
-
-
-    /*
-    uint32 wall = add_entity(scene, scenery_mask);
-    scene->transforms[wall].pos = {1, 1};
-    scene->colors[wall] = {0.3, 0.7, 1, 0.8};
-    scene->meshes[wall] = create_polygon(vb, ib, data, count_v, indices, count_i);
-    */
-
-    int32 moveable_mask = CM_Pos | CM_Mesh | CM_Color | CM_Collision | CM_Velocity | CM_Mass | CM_Friction;
-    uint32 pebble = add_entity(scene, moveable_mask);
-    scene->transforms[pebble].pos = {-2, 1};
-    scene->transforms[pebble].rot = 45 * PI / 180;
-    scene->transforms[pebble].scale = {1, 1};
-    scene->colors[pebble] = {1, 1, 1, 0.5};
-    scene->meshes[pebble] = create_polygon(vb, ib, data, count_v, indices, count_i);
-    scene->masses[pebble].value = 1;
-    scene->materials[scene->player_index] = {2, 3, 0.5};
-
-    int32 player_mask = CM_Pos | CM_Mesh | CM_Color | CM_Velocity | CM_Force | CM_Mass | CM_Friction | CM_Collision | CM_Rotation | CM_Selectable;
-    scene->player_index = add_entity(scene, player_mask);
-    scene->meshes[scene->player_index] = create_polygon(vb, ib, data, count_v, indices, count_i);
-    scene->transforms[scene->player_index].scale = {1, 1};
-    scene->forces[scene->player_index] = 5;
-    scene->masses[scene->player_index].value = 1;
-    scene->colors[scene->player_index] = {1, 1, 1, 0.5};
-    scene->materials[scene->player_index] = {2, 3, 0.5};
-
-#endif
+    scene->player_index = player;
 
     return (AppHandle)mem;
 }
@@ -160,15 +100,10 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
     real64 time_left = frame_time;
     while (time_left > 0.0) {
         real64 d_t = min(frame_time, 1.0d / SIM_RATE);
-        //uint32 f = scene->floor_index;
 
         if (!scene->paused) {
-            //scene->transforms[f].rot = 10.0f * (PI / 180) * sin((real32)scene->scene_time);
-            //accelerate(scene->player_movement, 1.0f * scene->forces[p], scene->masses[p].value, &scene->movements[p], d_t);
-            apply_external_forces(scene->movements, scene->materials, scene->collisions, scene->entities, scene->entity_count, d_t);
-            update_velocities(scene->movements, scene->entities, scene->entity_count, d_t);
-            handle_collisions(scene, d_t);
-            update_transforms(scene, d_t);
+            Body *player_body = scene->entities[scene->player_index].bodies[0];
+            player_body->p_ang += d_t * 100 * PI / 180;
             scene->scene_time += d_t;
         }
         time_left -= d_t;
@@ -176,7 +111,10 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
 
     // RENDER
     clear_framebuffer(fb, {0});
-    draw_scene(scene, fb);
+
+    draw_grid(scene, fb);
+
+    scene_draw_bodies(scene, fb, mem);
 
     as->app_time += frame_time;
     as->frame_count++;
@@ -187,7 +125,26 @@ app_update_and_render(real64 frame_time, AppHandle app, Framebuffer fb) {
         as->app_time = 0;
         char str[64];
         sprintf(str, "FPS: %2d", as->fps);
-        printf("%s\n", str);
+        //printf("%s\n", str);
+
+        uint64 mem_unit = 1;
+        uint64 mem_multiple = mem->used_size;
+        const char *desc[4] = {
+            "B",
+            "KB",
+            "MB",
+            "GB"
+        };
+        uint32 i = 0;
+        while (mem_multiple / 1024) {
+            mem_unit *= 1024;
+            mem_multiple /= mem_unit;
+            i++;
+        }
+        real32 mem_decimal = (real32) mem->used_size / mem_unit;
+        real32 frag_decimal = (real32) mem->fragmented / mem_unit;
+        printf("Total memory used: %4.2f %s\n", mem_decimal, desc[min(i, 3)]);
+        printf("Fragmented memory: %4.2f %s\n", frag_decimal, desc[min(i, 3)]);
     }
 
     /*
@@ -229,8 +186,7 @@ key_callback(KeyBoardInput key, InputType t, AppHandle app) {
             break;
     }
     if (magnitude(dir) > EPSILON)
-        apply_impulse(scene->meshes[scene->player_index], scene->masses[scene->player_index].value, scene->transforms[scene->player_index].pos, &scene->movements[scene->player_index].v, center_of_mass(scene->meshes[scene->player_index]), dir * scene->forces[scene->player_index]);
-    //scene->player_movement += dir;
+        ; // TODO: apply impulse to player body
 }
 
 void
@@ -239,12 +195,12 @@ mouse_button_callback(MouseButton btn, InputType t, int32 x, int32 y, AppHandle 
     Scene *scene = as->current_scene;
     switch (btn) {
     case BUTTON_1:
-        if (t == IT_PRESSED && (scene->entities[scene->hovered_entity] & CM_Selectable)) {
-            scene->selected_entity = scene->hovered_entity;
-        }
-        else {
-            scene->selected_entity = 0;
-        }
+        //if (t == IT_PRESSED && (scene->entities[scene->hovered_entity] & CM_Selectable)) {
+        //    scene->selected_entity = scene->hovered_entity;
+        //}
+        //else {
+        //    scene->selected_entity = 0;
+        //}
         break;
     case BUTTON_4:
         scene->camera.scale *= 1.1;
@@ -261,21 +217,23 @@ void
 mouse_move_callback(int32 x, int32 y, uint32 mask, AppHandle app) {
     AppState *as = (AppState *)((AppMemory *)app)->data;
     Scene *scene = as->current_scene;
-    uint32 entity_under_cursor = get_entity_from_screen_pos(x, y, scene);
-    if (entity_under_cursor != scene->hovered_entity) {
-        scene->hovered_entity = entity_under_cursor;
-    }
+    //uint32 entity_under_cursor = get_entity_from_screen_pos(x, y, scene);
+    //if (entity_under_cursor != scene->hovered_entity) {
+    //    scene->hovered_entity = entity_under_cursor;
+    //}
     v2 diff_world = screen_to_world_space({(real32)x, (real32)y}, scene->camera) - screen_to_world_space({(real32)as->mouse_x, (real32)as->mouse_y}, scene->camera);
     if (scene->selected_entity) {
     // TODO: define masks ourselves
-        if (mask & 1) {
-            scene->transforms[scene->selected_entity].pos += diff_world;
-        }
-        else if (scene->entities[scene->selected_entity] & CM_Velocity) {
-            scene->movements[scene->selected_entity].v += diff_world;
-            scene->predicted_transforms[scene->selected_entity] = scene->transforms[scene->selected_entity];
-            scene->predicted_transforms[scene->selected_entity].pos += scene->movements[scene->selected_entity].v;
-        }
+        //if (mask & 1) {
+        //    //scene->transforms[scene->selected_entity].pos += diff_world;
+        //    ;
+        //}
+        //else if (scene->entities[scene->selected_entity] & CM_Velocity) {
+        //    //scene->movements[scene->selected_entity].v += diff_world;
+        //    //scene->predicted_transforms[scene->selected_entity] = scene->transforms[scene->selected_entity];
+        //    //scene->predicted_transforms[scene->selected_entity].pos += scene->movements[scene->selected_entity].v;
+        //    ;
+        //}
     }
     else if (mask & (1<<8)) {
         scene->camera.pos -= diff_world;

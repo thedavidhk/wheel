@@ -225,7 +225,7 @@ magnitude(v2 v) {
 
 inline v2
 rnormal(v2 v) {
-    return v2{v.y, -v.x};
+    return v2{-v.y, v.x};
 }
 
 inline v2

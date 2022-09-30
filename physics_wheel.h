@@ -2,11 +2,13 @@
 
 #define MAX_POLYGON_VERTICES 8
 #define MAX_BODY_COUNT 64
-#define MAX_SHAPE_COUNT 64
 #define MAX_COLLISION_COUNT 64
 
-#define NEW_PHYSICS_SYSTEM 0
+#define MAX_SHAPES_PER_BODY 8
 
+#define NEW_PHYSICS_SYSTEM 1
+
+#include "shape_wheel.h"
 #include "mesh_wheel.h"
 
 
@@ -15,13 +17,6 @@ typedef void *BodyHandle;
 enum CollisionMask {
     CM_NONE,
     CM_EVERYTHING = 0xFFFFFFFF,
-};
-
-enum ShapeType {
-    ST_NONE,
-    ST_CIRCLE,
-    ST_POLYGON,
-    ST_COUNT
 };
 
 struct Mass {
@@ -45,6 +40,8 @@ struct BodyDef {
 };
 
 struct Body {
+    Shape *shapes[MAX_SHAPES_PER_BODY];
+    uint32 shape_count;
     v2 p;
     v2 v;
     real32 p_ang;
@@ -56,27 +53,9 @@ struct Body {
     real32 m_inv;
 };
 
-struct ShapeCircle {
-    v2 center;
-    real32 radius;
-};
-
-struct ShapePolygon {
+struct BodyList {
+    Body bodies[MAX_BODY_COUNT];
     uint32 count;
-    v2 *vertices;
-    v2 *normals;
-};
-
-struct Shape {
-    ShapeType type;
-    // TODO: Probably wanna use a hash table instead of "hard linking" a shape
-    // to a body. Both for decoupling reasons and to allow for instanced
-    // rendering.
-    Body *body;
-    union {
-        ShapeCircle circle;
-        ShapePolygon polygon;
-    };
 };
 
 #if NEW_PHYSICS_SYSTEM
@@ -127,13 +106,13 @@ struct Movement {
 };
 
 uint32
-body_create(BodyDef def);
+physics_create_body(BodyList *list, BodyDef def);
 
-uint32
-shape_create_circle(v2 center, real32 radius);
-
-uint32
-shape_create_polygon(uint32 count, const v2 *vertices);
+inline void
+physics_link_shape_to_body(Body *body, Shape *shape) {
+    assert(body->shape_count < MAX_SHAPES_PER_BODY);
+    body->shapes[body->shape_count++] = shape;
+}
 
 void
 handle_collisions(real64 d_t);

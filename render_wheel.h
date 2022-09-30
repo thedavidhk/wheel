@@ -2,6 +2,7 @@
 
 #include "wheel.h"
 #include "math_wheel.h"
+#include "shape_wheel.h"
 #include "mesh_wheel.h"
 
 struct Camera {
@@ -25,6 +26,9 @@ struct Font {
     uint32 cheight;
     uint32 ascii_offset;
 };
+
+void
+renderer_draw_shape_to_buffer(Framebuffer fb, Camera c, Shape shape, v2 p, real32 p_ang);
 
 void
 draw_line(Framebuffer fb, v2 a, v2 b, v4 color);
